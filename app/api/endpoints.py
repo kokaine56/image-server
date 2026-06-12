@@ -1,0 +1,389 @@
+import datetime
+import secrets
+import urllib.parse
+from typing import Optional
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import DOMAIN, STORAGE_CHANNEL_ID, SECRET_KEY, GUEST_LIMIT, USER_LIMIT
+from app.database import get_db
+from app.models import Image, Analytics, BannedUser
+from app.schemas import UploadSuccessResponse, StatsItem, ImageResponse
+from app.services.cache_service import cache_service
+from app.services.image_service import image_service
+from app.services.moderation_service import moderation_service
+from app.services.stats_service import stats_service
+from app.bot.bot_instance import bot
+from aiogram.types import BufferedInputFile
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
+
+# Rate limiting helper
+async def check_ip_rate_limit(ip: str, limit: int) -> bool:
+    day_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    cache_key = f"rate_limit:ip:{ip}:{day_str}"
+    
+    current = await cache_service.get(cache_key)
+    if current is None:
+        await cache_service.set(cache_key, b"1", expire=86400)
+        return True
+    
+    count = int(current.decode("utf-8"))
+    if count >= limit:
+        return False
+        
+    await cache_service.set(cache_key, str(count + 1).encode("utf-8"), expire=86400)
+    return True
+
+# Admin auth helper
+def verify_admin_token(token: Optional[str]) -> bool:
+    return token == SECRET_KEY
+
+# ----------------- HTML VIEWS -----------------
+
+@router.get("/", response_class=HTMLResponse)
+async def homepage_view(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@router.get("/stats", response_class=HTMLResponse)
+async def system_stats_view(request: Request, db: AsyncSession = Depends(get_db)):
+    stats = await stats_service.get_stats(db)
+    return templates.TemplateResponse("stats.html", {"request": request, "stats": stats})
+
+@router.get("/i/{slug}", response_class=HTMLResponse)
+async def image_preview_view(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
+    stmt = select(Image).where(Image.slug == slug)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    # Record view async
+    await stats_service.record_view(
+        db, 
+        image, 
+        ip=request.client.host if request.client else "127.0.0.1",
+        referrer=request.headers.get("referer"),
+        user_agent=request.headers.get("user-agent")
+    )
+    
+    return templates.TemplateResponse("image.html", {
+        "request": request, 
+        "image": image, 
+        "domain": DOMAIN
+    })
+
+@router.get("/delete/{slug}/{delete_token}", response_class=HTMLResponse)
+async def delete_image_view(slug: str, delete_token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    stmt = select(Image).where(Image.slug == slug, Image.delete_token == delete_token)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Invalid deletion credentials")
+        
+    # Delete from DB
+    await db.delete(image)
+    await db.commit()
+    
+    # Delete from Cache
+    await cache_service.delete(f"image_cache:{slug}:full")
+    await cache_service.delete(f"image_cache:{slug}:thumb")
+    
+    return templates.TemplateResponse("error.html", {
+        "request": request,
+        "error_code": "Deleted",
+        "message": f"Image with slug '{slug}' has been permanently deleted from storage."
+    })
+
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard_view(
+    request: Request,
+    token: Optional[str] = None,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    if not verify_admin_token(token):
+        return templates.TemplateResponse("error.html", {
+            "request": request,
+            "error_code": "401",
+            "message": "Unauthorized access. Invalid or missing administrator session token."
+        }, status_code=401)
+        
+    # Get stats
+    stats = await stats_service.get_stats(db)
+    
+    # Get images list
+    if search:
+        stmt = select(Image).where(
+            (Image.slug.ilike(f"%{search}%")) |
+            (func.cast(Image.uploaded_by, func.String).ilike(f"%{search}%"))
+        ).order_by(Image.created_at.desc())
+    else:
+        stmt = select(Image).order_by(Image.created_at.desc()).limit(50)
+        
+    res = await db.execute(stmt)
+    images = res.scalars().all()
+    
+    return templates.TemplateResponse("admin.html", {
+        "request": request,
+        "stats": stats,
+        "images": images,
+        "token": token,
+        "search": search
+    })
+
+@router.post("/admin/delete/{slug}")
+async def admin_delete_image(
+    slug: str,
+    token: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    if not verify_admin_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    stmt = select(Image).where(Image.slug == slug)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    await db.delete(image)
+    await db.commit()
+    
+    await cache_service.delete(f"image_cache:{slug}:full")
+    await cache_service.delete(f"image_cache:{slug}:thumb")
+    
+    return RedirectResponse(url=f"/admin?token={token}", status_code=303)
+
+@router.post("/admin/ban/{telegram_id}")
+async def admin_ban_user(
+    telegram_id: int,
+    token: str = Form(...),
+    reason: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    if not verify_admin_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    ban_entry = BannedUser(telegram_id=telegram_id, reason=reason)
+    db.add(ban_entry)
+    await db.commit()
+    
+    return RedirectResponse(url=f"/admin?token={token}", status_code=303)
+
+# ----------------- PROXY RAW SERVING -----------------
+
+@router.get("/raw/{slug}")
+async def raw_image_endpoint(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
+    cache_key = f"image_cache:{slug}:full"
+    
+    # 1. Check Cache
+    cached_data = await cache_service.get(cache_key)
+    
+    stmt = select(Image).where(Image.slug == slug)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    if cached_data:
+        # Cache hit
+        etag = f'W/"{slug}-full"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304)
+        return Response(
+            content=cached_data, 
+            media_type=image.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "ETag": etag
+            }
+        )
+        
+    # 2. Cache Miss - Fetch from Telegram Bot API securely
+    try:
+        tg_file = await bot.get_file(image.file_id)
+        if not tg_file.file_path:
+            raise ValueError("File path not available")
+            
+        file_stream = await bot.download_file(tg_file.file_path)
+        if not file_stream:
+            raise ValueError("Failed to retrieve file contents")
+            
+        image_bytes = file_stream.read()
+        
+        # Optimize image with Pillow
+        optimized_bytes = image_service.validate_and_optimize(image_bytes)
+        
+        # Save to Cache
+        await cache_service.set(cache_key, optimized_bytes, expire=86400)
+        
+        return Response(
+            content=optimized_bytes,
+            media_type=image.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "ETag": f'W/"{slug}-full"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Proxy error loading storage asset: {e}")
+
+@router.get("/thumb/{slug}")
+async def thumbnail_image_endpoint(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
+    cache_key = f"image_cache:{slug}:thumb"
+    
+    # Check Cache
+    cached_data = await cache_service.get(cache_key)
+    
+    stmt = select(Image).where(Image.slug == slug)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    if cached_data:
+        etag = f'W/"{slug}-thumb"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304)
+        return Response(
+            content=cached_data,
+            media_type=image.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "ETag": etag
+            }
+        )
+        
+    try:
+        # Fetch original from Telegram
+        tg_file = await bot.get_file(image.file_id)
+        file_stream = await bot.download_file(tg_file.file_path)
+        if not file_stream:
+            raise ValueError("Failed to download file content")
+            
+        original_bytes = file_stream.read()
+        
+        # Generate 300px thumbnail
+        thumb_bytes = image_service.generate_thumbnail(original_bytes)
+        
+        # Save to Cache
+        await cache_service.set(cache_key, thumb_bytes, expire=86400)
+        
+        return Response(
+            content=thumb_bytes,
+            media_type=image.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "ETag": f'W/"{slug}-thumb"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Proxy error creating thumbnail: {e}")
+
+# ----------------- JSON REST API -----------------
+
+@router.post("/api/upload", response_model=UploadSuccessResponse)
+async def api_upload_image(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    ip = request.client.host if request.client else "127.0.0.1"
+    
+    # 1. Rate Limiting Check for Guest IP
+    if not await check_ip_rate_limit(ip, GUEST_LIMIT):
+        raise HTTPException(status_code=429, detail="Daily rate limit exceeded for guest upload.")
+        
+    # 2. File Verification
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are permitted.")
+        
+    try:
+        file_bytes = await file.read()
+        
+        # Validate structure with Pillow
+        optimized_bytes = image_service.validate_and_optimize(file_bytes)
+        file_size = len(optimized_bytes)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid image structure or corrupt content.")
+        
+    # 3. Content Moderation
+    is_nsfw = moderation_service.check_nsfw(optimized_bytes)
+    
+    # 4. Upload to storage channel
+    try:
+        input_file = BufferedInputFile(optimized_bytes, filename=file.filename or "image.jpg")
+        sent_msg = await bot.send_document(
+            chat_id=STORAGE_CHANNEL_ID,
+            document=input_file
+        )
+        file_id = sent_msg.document.file_id if sent_msg.document else sent_msg.photo[-1].file_id
+        file_unique_id = sent_msg.document.file_unique_id if sent_msg.document else sent_msg.photo[-1].file_unique_id
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Storage upload failed: {e}")
+        
+    # 5. Save DB entry
+    slug = await generate_unique_slug(db)
+    delete_token = secrets.token_hex(16)
+    
+    new_image = Image(
+        slug=slug,
+        file_id=file_id,
+        file_unique_id=file_unique_id,
+        message_id=sent_msg.message_id,
+        mime_type=file.content_type,
+        file_size=file_size,
+        uploaded_by=None,  # Guest upload
+        delete_token=delete_token,
+        is_nsfw=is_nsfw,
+        nsfw_checked=True
+    )
+    db.add(new_image)
+    await db.commit()
+    
+    return UploadSuccessResponse(
+        message="Image uploaded successfully.",
+        slug=slug,
+        view_url=f"{DOMAIN}/i/{slug}",
+        raw_url=f"{DOMAIN}/raw/{slug}",
+        delete_url=f"{DOMAIN}/delete/{slug}/{delete_token}"
+    )
+
+@router.get("/api/image/{slug}", response_model=ImageResponse)
+async def api_get_image_metadata(slug: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(Image).where(Image.slug == slug)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return image
+
+@router.delete("/api/image/{slug}")
+async def api_delete_image(
+    slug: str,
+    delete_token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Image).where(Image.slug == slug, Image.delete_token == delete_token)
+    res = await db.execute(stmt)
+    image = res.scalar()
+    if not image:
+        raise HTTPException(status_code=404, detail="Invalid delete token or slug")
+        
+    await db.delete(image)
+    await db.commit()
+    
+    await cache_service.delete(f"image_cache:{slug}:full")
+    await cache_service.delete(f"image_cache:{slug}:thumb")
+    
+    return {"message": f"Image '{slug}' has been successfully deleted."}
+
+@router.get("/api/stats", response_model=StatsItem)
+async def api_get_system_stats(db: AsyncSession = Depends(get_db)):
+    stats = await stats_service.get_stats(db)
+    return stats
