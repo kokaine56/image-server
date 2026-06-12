@@ -58,6 +58,13 @@ def verify_telegram_webapp_data(token: str, init_data: str) -> dict | None:
         if calculated_hash == received_hash:
             import json
             return json.loads(parsed.get("user", "{}"))
+        else:
+            logger.warning(
+                f"Signature mismatch!\n"
+                f"Calculated: {calculated_hash}\n"
+                f"Received: {received_hash}\n"
+                f"Data check string:\n{data_check_string}"
+            )
         return None
     except Exception as e:
         logger.error(f"Error validating Telegram WebApp signature: {e}")
@@ -159,8 +166,8 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
         user_stats = {
             "lifetime_uploads": lifetime_uploads,
             "daily_uploads": daily_count,
-            "limit": "Unlimited" if is_admin else str(USER_LIMIT),
-            "remaining": "Unlimited" if is_admin else str(max(0, USER_LIMIT - daily_count)),
+            "limit": "Unlimited" if is_admin else USER_LIMIT,
+            "remaining": "Unlimited" if is_admin else max(0, USER_LIMIT - daily_count),
             "role": "👑 Administrator" if is_admin else "👤 Standard User"
         }
         
