@@ -506,25 +506,77 @@
     position: fixed;
     bottom: 90px;
     right: 20px;
-    background: rgba(7,8,12,0.97);
-    border: 1px solid rgba(59,130,246,0.3);
-    border-radius: 16px;
-    padding: 12px 16px;
+    left: 20px;
+    margin: 0 auto;
+    background: rgba(7, 8, 12, 0.96);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 18px;
+    padding: 16px 20px;
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 10px;
     z-index: 300;
-    box-shadow: 0 16px 40px -8px rgba(0,0,0,0.7);
-    max-width: 260px;
-    transform: translateY(80px);
+    box-shadow: 0 16px 40px -8px rgba(0,0,0,0.8);
+    max-width: 420px;
+    transform: translateY(120px);
     opacity: 0;
     pointer-events: none;
-    transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    backdrop-filter: blur(20px);
 }
 #floating-upload-status.visible {
     transform: translateY(0);
     opacity: 1;
     pointer-events: auto;
+}
+.upload-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+#upload-status-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #60A5FA;
+}
+#upload-status-pct {
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    color: #34D399;
+}
+#upload-status-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.upload-progress-container {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+}
+#upload-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #3B82F6, #34D399);
+    border-radius: 99px;
+    transition: width 0.1s linear;
+}
+.upload-status-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #64748B;
+    font-weight: 500;
 }
 </style>
 {% endblock %}
@@ -715,6 +767,22 @@
 <button id="fab-upload" onclick="triggerFileUpload()" title="Upload Asset" aria-label="Upload Asset">
     <i class="fa-solid fa-plus"></i>
 </button>
+
+<!-- =================== FLOATING UPLOAD PROGRESS STATUS BAR =================== -->
+<div id="floating-upload-status">
+    <div class="upload-status-header">
+        <span id="upload-status-title">Uploading...</span>
+        <span id="upload-status-pct">0%</span>
+    </div>
+    <div id="upload-status-text">preparing files</div>
+    <div class="upload-progress-container">
+        <div id="upload-progress-bar"></div>
+    </div>
+    <div class="upload-status-footer">
+        <span id="upload-status-bytes">0 B / 0 B</span>
+        <span id="upload-status-time">Calculating...</span>
+    </div>
+</div>
 
 <!-- =================== LIGHTBOX =================== -->
 <div id="lightbox">
@@ -1289,11 +1357,30 @@
     });
 
     const dropOverlay = document.getElementById('fullscreen-dropzone');
-    window.addEventListener('dragenter', e => { e.preventDefault(); dropOverlay.classList.add('active'); });
-    dropOverlay.addEventListener('dragover', e => e.preventDefault());
-    dropOverlay.addEventListener('dragleave', e => { e.preventDefault(); dropOverlay.classList.remove('active'); });
-    dropOverlay.addEventListener('drop', e => {
+    let dragCounter = 0;
+    
+    window.addEventListener('dragenter', e => {
         e.preventDefault();
+        dragCounter++;
+        dropOverlay.classList.add('active');
+    });
+    
+    window.addEventListener('dragover', e => {
+        e.preventDefault();
+    });
+    
+    window.addEventListener('dragleave', e => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            dropOverlay.classList.remove('active');
+        }
+    });
+    
+    window.addEventListener('drop', e => {
+        e.preventDefault();
+        dragCounter = 0;
         dropOverlay.classList.remove('active');
         if (e.dataTransfer.files.length > 0) handleUploads(e.dataTransfer.files);
     });
@@ -1303,19 +1390,89 @@
         if (!files.length) return;
         if (files.length > 10) { alert('Max 10 assets at a time.'); files = files.slice(0, 10); }
 
+        const sPctEl = document.getElementById('upload-status-pct');
+        const sBarEl = document.getElementById('upload-progress-bar');
+        const sBytesEl = document.getElementById('upload-status-bytes');
+        const sTimeEl = document.getElementById('upload-status-time');
+
         statusBox.classList.add('visible');
+
+        const formatBytes = (bytes) => {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        };
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             sTitleEl.textContent = `Uploading ${i+1} of ${files.length}`;
             sTextEl.textContent  = `"${file.name}"`;
+
+            // Reset progress variables
+            sPctEl.textContent = '0%';
+            sBarEl.style.width = '0%';
+            sBytesEl.textContent = `0 B / ${formatBytes(file.size)}`;
+            sTimeEl.textContent = 'Calculating...';
+
             const fd = new FormData();
             fd.append('file', file);
-            try {
-                const r = await fetch('/api/upload', { method: 'POST', body: fd });
-                const d = await r.json();
-                if (!r.ok) alert(`Error uploading "${file.name}": ${d.detail || 'Upload failed.'}`);
-            } catch (e) { alert(`Network error: ${e}`); }
+
+            await new Promise((resolve) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/upload', true);
+
+                let startTime = Date.now();
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const pct = Math.round((e.loaded / e.total) * 100);
+                        sPctEl.textContent = `${pct}%`;
+                        sBarEl.style.width = `${pct}%`;
+                        sBytesEl.textContent = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
+
+                        // Estimate time remaining
+                        const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+                        if (elapsedTime > 0.2 && e.loaded > 0) {
+                            const speed = e.loaded / elapsedTime; // bytes per second
+                            const bytesRemaining = e.total - e.loaded;
+                            const secondsRemaining = bytesRemaining / speed;
+
+                            if (secondsRemaining <= 0) {
+                                sTimeEl.textContent = 'Processing...';
+                            } else if (secondsRemaining < 60) {
+                                sTimeEl.textContent = `${Math.round(secondsRemaining)}s left`;
+                            } else {
+                                const mins = Math.floor(secondsRemaining / 60);
+                                const secs = Math.round(secondsRemaining % 60);
+                                sTimeEl.textContent = `${mins}m ${secs}s left`;
+                            }
+                        }
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve();
+                    } else {
+                        let errText = 'Upload failed';
+                        try {
+                            const d = JSON.parse(xhr.responseText);
+                            errText = d.detail || errText;
+                        } catch (err) {}
+                        alert(`Error uploading "${file.name}": ${errText}`);
+                        resolve();
+                    }
+                };
+
+                xhr.onerror = () => {
+                    alert(`Network error uploading "${file.name}"`);
+                    resolve();
+                };
+
+                xhr.send(fd);
+            });
         }
 
         statusBox.classList.remove('visible');
