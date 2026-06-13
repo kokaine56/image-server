@@ -776,6 +776,27 @@
 {% block scripts %}
 <script>
     // ============================================================
+    // PERMANENT PASSCODE LOCK CHECK
+    // ============================================================
+    (function() {
+        const userHasLock = {% if user_has_lock %}true{% else %}false{% endif %};
+        if (userHasLock) {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('unlocked') === 'true') {
+                sessionStorage.setItem('gallery_unlocked', 'true');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } else if (sessionStorage.getItem('gallery_unlocked') !== 'true') {
+                // New tab/browser session, clear server session and reload to trigger unlock screen
+                fetch('/api/user/lock/lock', { method: 'POST' })
+                    .then(() => location.reload());
+                return;
+            }
+        } else {
+            sessionStorage.removeItem('gallery_unlocked');
+        }
+    })();
+
+    // ============================================================
     // QUOTA BAR + COUNTDOWN
     // ============================================================
     const qBar = document.getElementById('tele-quota-bar');
@@ -857,6 +878,75 @@
         document.getElementById('lb-full-img').src = '';
         document.body.style.overflow = '';
     }
+
+    // Navigation for Lightbox
+    function navigateLightbox(direction) {
+        const cells = Array.from(document.querySelectorAll('.img-cell'));
+        if (cells.length <= 1) return;
+        
+        let currentIndex = cells.findIndex(cell => cell.dataset.slug === lbCurrentSlug);
+        if (currentIndex === -1) return;
+        
+        let nextIndex = currentIndex + direction;
+        if (nextIndex < 0) {
+            nextIndex = cells.length - 1;
+        } else if (nextIndex >= cells.length) {
+            nextIndex = 0;
+        }
+        
+        const nextCell = cells[nextIndex];
+        openLightbox(
+            nextCell.dataset.slug,
+            nextCell.dataset.raw,
+            nextCell.dataset.thumb,
+            parseInt(nextCell.dataset.size, 10)
+        );
+    }
+
+    // Touch events for Swiping
+    let touchstartX = 0;
+    let touchendX = 0;
+    let touchstartY = 0;
+    let touchendY = 0;
+
+    const lbContainer = document.getElementById('lightbox');
+    if (lbContainer) {
+        lbContainer.addEventListener('touchstart', e => {
+            touchstartX = e.changedTouches[0].screenX;
+            touchstartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        lbContainer.addEventListener('touchend', e => {
+            touchendX = e.changedTouches[0].screenX;
+            touchendY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }, { passive: true });
+    }
+
+    function handleSwipe() {
+        const diffX = touchendX - touchstartX;
+        const diffY = touchendY - touchstartY;
+        
+        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+            if (diffX < 0) {
+                navigateLightbox(1);  // Swipe left -> next
+            } else {
+                navigateLightbox(-1); // Swipe right -> prev
+            }
+        }
+    }
+
+    // Keyboard support
+    document.addEventListener('keydown', e => {
+        if (!document.getElementById('lightbox').classList.contains('open')) return;
+        if (e.key === 'ArrowRight') {
+            navigateLightbox(1);
+        } else if (e.key === 'ArrowLeft') {
+            navigateLightbox(-1);
+        } else if (e.key === 'Escape') {
+            closeLightbox();
+        }
+    });
 
     function lbCopyDirect() { copyText(lbCurrentRaw, 'Direct URL copied!'); }
 

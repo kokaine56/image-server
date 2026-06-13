@@ -788,7 +788,7 @@ async def api_unlock_gallery(
     
     if not user_lock or user_lock.password == password:
         request.session["gallery_unlocked"] = True
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/?unlocked=true", status_code=303)
         
     return templates.TemplateResponse(
         request=request,
@@ -801,6 +801,11 @@ async def api_unlock_gallery(
         },
         status_code=400
     )
+
+@router.post("/api/user/lock/lock")
+async def api_lock_session(request: Request):
+    request.session.pop("gallery_unlocked", None)
+    return {"success": True}
 
 @router.post("/api/user/lock/disable")
 async def api_disable_user_lock(
