@@ -500,84 +500,171 @@
 #toast.show { visibility: visible; opacity: 1; transition: opacity 0.25s; }
 
 /* ============================================================
-   FLOATING UPLOAD STATUS
+   MULTI-FILE UPLOAD QUEUE PANEL
    ============================================================ */
-#floating-upload-status {
+#upload-queue-panel {
     position: fixed;
     bottom: 90px;
     right: 20px;
     left: 20px;
     margin: 0 auto;
-    background: rgba(7, 8, 12, 0.96);
-    border: 1px solid rgba(59, 130, 246, 0.25);
-    border-radius: 18px;
-    padding: 16px 20px;
+    max-width: 420px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     z-index: 300;
-    box-shadow: 0 16px 40px -8px rgba(0,0,0,0.8);
-    max-width: 420px;
-    transform: translateY(120px);
-    opacity: 0;
     pointer-events: none;
-    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-    backdrop-filter: blur(20px);
+    max-height: 70vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
 }
-#floating-upload-status.visible {
-    transform: translateY(0);
-    opacity: 1;
-    pointer-events: auto;
-}
-.upload-status-header {
+#upload-queue-panel::-webkit-scrollbar { display: none; }
+
+.upload-card {
+    background: rgba(7, 8, 14, 0.97);
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    border-radius: 16px;
+    padding: 12px 14px;
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: auto;
+    box-shadow: 0 12px 36px -8px rgba(0,0,0,0.85);
+    backdrop-filter: blur(22px);
+    transform: translateY(30px) scale(0.96);
+    opacity: 0;
+    animation: cardIn 0.32s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+.upload-card.done {
+    border-color: rgba(52,211,153,0.3);
+    animation: cardOut 0.38s 1.2s cubic-bezier(0.4,0,1,1) forwards;
+}
+.upload-card.error {
+    border-color: rgba(239,68,68,0.3);
+    animation: cardOut 0.38s 2.5s cubic-bezier(0.4,0,1,1) forwards;
+}
+.upload-card.cancelled {
+    animation: cardOut 0.25s 0.1s cubic-bezier(0.4,0,1,1) forwards;
+}
+@keyframes cardIn {
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes cardOut {
+    to { transform: translateY(20px) scale(0.92); opacity: 0; pointer-events: none; }
+}
+
+.uc-row1 {
+    display: flex;
     align-items: center;
+    gap: 10px;
 }
-#upload-status-title {
-    font-family: 'Outfit', sans-serif;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: .06em;
-    text-transform: uppercase;
+.uc-thumb {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
     color: #60A5FA;
+    flex-shrink: 0;
+    overflow: hidden;
 }
-#upload-status-pct {
-    font-family: 'Outfit', sans-serif;
-    font-size: 11px;
-    font-weight: 800;
-    color: #34D399;
+.uc-thumb img, .uc-thumb video, .uc-thumb canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
 }
-#upload-status-text {
+.uc-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.uc-name {
+    font-family: 'Inter', sans-serif;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     color: #fff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.upload-progress-container {
+.uc-meta {
+    font-size: 9px;
+    color: #64748B;
+    font-weight: 600;
+}
+.uc-cancel {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.18);
+    border-radius: 8px;
+    padding: 5px 9px;
+    font-size: 9px;
+    font-weight: 800;
+    color: #F87171;
+    cursor: pointer;
+    transition: background 0.18s;
+    flex-shrink: 0;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.uc-cancel:hover { background: rgba(239,68,68,0.18); }
+.uc-cancel:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.uc-bar-wrap {
     width: 100%;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.05);
+    height: 5px;
+    background: rgba(255,255,255,0.05);
     border-radius: 99px;
     overflow: hidden;
-    position: relative;
 }
-#upload-progress-bar {
+.uc-bar {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, #3B82F6, #34D399);
     border-radius: 99px;
-    transition: width 0.1s linear;
+    background: linear-gradient(90deg, #3B82F6, #6366F1);
+    transition: width 0.12s linear;
 }
-.upload-status-footer {
+.uc-bar.processing {
+    background: linear-gradient(90deg, #F59E0B, #EF4444);
+    animation: processingPulse 1.4s ease-in-out infinite;
+    width: 100% !important;
+}
+.uc-bar.done {
+    background: linear-gradient(90deg, #10B981, #34D399);
+    width: 100% !important;
+}
+.uc-bar.error { background: #EF4444; width: 100% !important; }
+@keyframes processingPulse {
+    0%, 100% { opacity: 0.55; }
+    50%       { opacity: 1; }
+}
+
+.uc-row3 {
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
+    align-items: center;
+    font-size: 9px;
     color: #64748B;
-    font-weight: 500;
+    font-weight: 600;
 }
+.uc-pct {
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px;
+    font-weight: 800;
+    color: #60A5FA;
+}
+.uc-pct.processing { color: #F59E0B; }
+.uc-pct.done       { color: #34D399; }
+.uc-pct.error      { color: #F87171; }
 </style>
 {% endblock %}
 
@@ -768,23 +855,8 @@
     <i class="fa-solid fa-plus"></i>
 </button>
 
-<!-- =================== FLOATING UPLOAD PROGRESS STATUS BAR =================== -->
-<div id="floating-upload-status">
-    <div class="upload-status-header">
-        <span id="upload-status-title">Uploading...</span>
-        <span id="upload-status-pct">0%</span>
-    </div>
-    <div id="upload-status-text">preparing files</div>
-    <div class="upload-progress-container">
-        <div id="upload-progress-bar"></div>
-    </div>
-    <div class="upload-status-footer">
-        <span id="upload-status-bytes">0 B / 0 B</span>
-        <span id="upload-status-time">Calculating...</span>
-    </div>
-</div>
-
-<!-- =================== LIGHTBOX =================== -->
+<!-- =================== MULTI-FILE UPLOAD QUEUE PANEL =================== -->
+<div id="upload-queue-panel"></div>
 <div id="lightbox">
     <!-- Top bar -->
     <div id="lb-topbar">
@@ -1343,141 +1415,287 @@
     }
 
     // ============================================================
-    // UPLOAD
+    // UPLOAD — Multi-queue, per-file cards, video thumbnails,
+    //          cancel support, background-safe (no alert blocking)
     // ============================================================
-    const fileInput = document.getElementById('file-input');
-    const statusBox = document.getElementById('floating-upload-status');
-    const sTitleEl  = document.getElementById('upload-status-title');
-    const sTextEl   = document.getElementById('upload-status-text');
+    const fileInput   = document.getElementById('file-input');
+    const queuePanel  = document.getElementById('upload-queue-panel');
 
     function triggerFileUpload() { fileInput.click(); }
 
     fileInput.addEventListener('change', () => {
-        if (fileInput.files.length > 0) handleUploads(fileInput.files);
+        if (fileInput.files.length > 0) {
+            handleUploads(fileInput.files);
+            fileInput.value = ''; // allow re-selecting same file
+        }
     });
 
     const dropOverlay = document.getElementById('fullscreen-dropzone');
     let dragCounter = 0;
-    
-    window.addEventListener('dragenter', e => {
-        e.preventDefault();
-        dragCounter++;
-        dropOverlay.classList.add('active');
-    });
-    
-    window.addEventListener('dragover', e => {
-        e.preventDefault();
-    });
-    
-    window.addEventListener('dragleave', e => {
-        e.preventDefault();
-        dragCounter--;
-        if (dragCounter <= 0) {
-            dragCounter = 0;
-            dropOverlay.classList.remove('active');
-        }
-    });
-    
+    window.addEventListener('dragenter', e => { e.preventDefault(); dragCounter++; dropOverlay.classList.add('active'); });
+    window.addEventListener('dragover',  e => { e.preventDefault(); });
+    window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove('active'); } });
     window.addEventListener('drop', e => {
-        e.preventDefault();
-        dragCounter = 0;
-        dropOverlay.classList.remove('active');
+        e.preventDefault(); dragCounter = 0; dropOverlay.classList.remove('active');
         if (e.dataTransfer.files.length > 0) handleUploads(e.dataTransfer.files);
     });
+
+    // ---- helpers ----
+    const formatBytes = b => {
+        if (!b) return '0 B';
+        const k = 1024, s = ['B','KB','MB','GB'];
+        const i = Math.floor(Math.log(b) / Math.log(k));
+        return (b / Math.pow(k, i)).toFixed(1) + ' ' + s[i];
+    };
+
+    // Generate video thumbnail via canvas (client-side, no server round-trip)
+    function getVideoThumbnail(file) {
+        return new Promise(resolve => {
+            const url = URL.createObjectURL(file);
+            const vid = document.createElement('video');
+            vid.muted = true; vid.playsInline = true; vid.preload = 'metadata';
+            vid.src = url;
+            vid.addEventListener('loadeddata', () => {
+                vid.currentTime = Math.min(1, vid.duration * 0.1);
+            }, { once: true });
+            vid.addEventListener('seeked', () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 80; canvas.height = 80;
+                canvas.getContext('2d').drawImage(vid, 0, 0, 80, 80);
+                URL.revokeObjectURL(url);
+                resolve(canvas.toDataURL('image/jpeg', 0.7));
+            }, { once: true });
+            vid.addEventListener('error', () => { URL.revokeObjectURL(url); resolve(null); }, { once: true });
+            setTimeout(() => { URL.revokeObjectURL(url); resolve(null); }, 4000); // timeout fallback
+        });
+    }
+
+    // ---- card factory ----
+    async function createCard(file) {
+        const card = document.createElement('div');
+        card.className = 'upload-card';
+
+        // Thumbnail
+        const thumbDiv = document.createElement('div');
+        thumbDiv.className = 'uc-thumb';
+        const mime = (file.type || '').toLowerCase();
+        if (mime.startsWith('image/')) {
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            img.onload = () => URL.revokeObjectURL(img.src);
+            thumbDiv.appendChild(img);
+        } else if (mime.startsWith('video/')) {
+            thumbDiv.innerHTML = '<i class="fa-solid fa-spinner" style="animation:spin 0.8s linear infinite;font-size:12px;color:#F59E0B;"></i>';
+            getVideoThumbnail(file).then(dataUrl => {
+                if (dataUrl) {
+                    const img = document.createElement('img');
+                    img.src = dataUrl;
+                    thumbDiv.innerHTML = '';
+                    thumbDiv.appendChild(img);
+                } else {
+                    thumbDiv.innerHTML = '<i class="fa-regular fa-circle-play" style="color:#F59E0B;"></i>';
+                }
+            });
+        } else if (mime === 'application/pdf' || mime.includes('document') || mime.includes('word') || mime.includes('excel') || mime.startsWith('text/')) {
+            thumbDiv.innerHTML = '<i class="fa-regular fa-file-pdf" style="color:#34D399;"></i>';
+        } else {
+            thumbDiv.innerHTML = '<i class="fa-regular fa-file" style="color:#94A3B8;"></i>';
+        }
+
+        // Info block
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'uc-info';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'uc-name';
+        nameEl.title = file.name;
+        nameEl.textContent = file.name;
+        const metaEl = document.createElement('div');
+        metaEl.className = 'uc-meta';
+        metaEl.textContent = formatBytes(file.size);
+        infoDiv.append(nameEl, metaEl);
+
+        // Cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'uc-cancel';
+        cancelBtn.textContent = 'Cancel';
+
+        const row1 = document.createElement('div');
+        row1.className = 'uc-row1';
+        row1.append(thumbDiv, infoDiv, cancelBtn);
+
+        // Progress bar
+        const barWrap = document.createElement('div');
+        barWrap.className = 'uc-bar-wrap';
+        const bar = document.createElement('div');
+        bar.className = 'uc-bar';
+        barWrap.appendChild(bar);
+
+        // Row3: status
+        const row3 = document.createElement('div');
+        row3.className = 'uc-row3';
+        const statusEl = document.createElement('span');
+        statusEl.textContent = 'Queued';
+        const pctEl = document.createElement('span');
+        pctEl.className = 'uc-pct';
+        pctEl.textContent = '0%';
+        row3.append(statusEl, pctEl);
+
+        card.append(row1, barWrap, row3);
+        queuePanel.appendChild(card);
+
+        return { card, bar, statusEl, pctEl, cancelBtn };
+    }
+
+    // ---- spin keyframe (injected once) ----
+    if (!document.getElementById('spin-kf')) {
+        const s = document.createElement('style');
+        s.id = 'spin-kf';
+        s.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+        document.head.appendChild(s);
+    }
+
+    let anySucceeded = false;
 
     async function handleUploads(fileList) {
         let files = Array.from(fileList);
         if (!files.length) return;
-        if (files.length > 10) { alert('Max 10 assets at a time.'); files = files.slice(0, 10); }
+        if (files.length > 10) { showToast('Max 10 files at a time. First 10 selected.'); files = files.slice(0, 10); }
 
-        const sPctEl = document.getElementById('upload-status-pct');
-        const sBarEl = document.getElementById('upload-progress-bar');
-        const sBytesEl = document.getElementById('upload-status-bytes');
-        const sTimeEl = document.getElementById('upload-status-time');
+        // Process files in parallel (up to 3 concurrent) using a semaphore
+        const MAX_CONCURRENT = 3;
+        let active = 0;
+        let idx = 0;
+        anySucceeded = false;
 
-        statusBox.classList.add('visible');
+        await new Promise(outerResolve => {
+            function tryNext() {
+                while (active < MAX_CONCURRENT && idx < files.length) {
+                    const file = files[idx++];
+                    active++;
+                    uploadOne(file).then(() => {
+                        active--;
+                        if (active === 0 && idx >= files.length) outerResolve();
+                        else tryNext();
+                    });
+                }
+            }
+            tryNext();
+        });
 
-        const formatBytes = (bytes) => {
-            if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-        };
+        if (anySucceeded) {
+            showToast('✅ Upload complete!');
+            setTimeout(() => location.reload(), 1200);
+        }
+    }
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            sTitleEl.textContent = `Uploading ${i+1} of ${files.length}`;
-            sTextEl.textContent  = `"${file.name}"`;
+    async function uploadOne(file) {
+        const { card, bar, statusEl, pctEl, cancelBtn } = await createCard(file);
 
-            // Reset progress variables
-            sPctEl.textContent = '0%';
-            sBarEl.style.width = '0%';
-            sBytesEl.textContent = `0 B / ${formatBytes(file.size)}`;
-            sTimeEl.textContent = 'Calculating...';
+        return new Promise(resolve => {
+            const xhr = new XMLHttpRequest();
+            let cancelled = false;
+            let startTime = Date.now();
+
+            cancelBtn.addEventListener('click', () => {
+                cancelled = true;
+                xhr.abort();
+                card.classList.add('cancelled');
+                pctEl.textContent = 'Cancelled';
+                statusEl.textContent = 'Aborted';
+                setTimeout(() => card.remove(), 600);
+                resolve();
+            });
+
+            xhr.open('POST', '/api/upload', true);
+
+            // Phase 1: browser → server progress
+            xhr.upload.onprogress = e => {
+                if (!e.lengthComputable || cancelled) return;
+                const pct = Math.round((e.loaded / e.total) * 100);
+                bar.style.width = pct + '%';
+                pctEl.textContent = pct + '%';
+
+                const elapsed = (Date.now() - startTime) / 1000;
+                if (elapsed > 0.2 && e.loaded > 0) {
+                    const speed = e.loaded / elapsed;
+                    const rem = (e.total - e.loaded) / speed;
+                    if (rem <= 0) {
+                        statusEl.textContent = 'Sending to Telegram…';
+                    } else if (rem < 60) {
+                        statusEl.textContent = Math.round(rem) + 's left';
+                    } else {
+                        statusEl.textContent = Math.floor(rem/60) + 'm ' + Math.round(rem%60) + 's left';
+                    }
+                }
+
+                // Phase 2: 100% browser→server → switch to processing pulse
+                if (pct === 100) {
+                    bar.classList.add('processing');
+                    pctEl.className = 'uc-pct processing';
+                    pctEl.textContent = '100%';
+                    statusEl.textContent = '⚡ Sending to Telegram…';
+                    cancelBtn.disabled = true;
+                }
+            };
+
+            xhr.onload = () => {
+                if (cancelled) return;
+                bar.classList.remove('processing');
+                cancelBtn.disabled = true;
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    bar.classList.add('done');
+                    pctEl.className = 'uc-pct done';
+                    pctEl.textContent = '✓ Done';
+                    statusEl.textContent = 'Saved to channel';
+                    anySucceeded = true;
+                    setTimeout(() => card.remove(), 2000);
+                } else {
+                    bar.classList.add('error');
+                    pctEl.className = 'uc-pct error';
+                    pctEl.textContent = 'Failed';
+                    let msg = 'Upload failed';
+                    try { msg = JSON.parse(xhr.responseText).detail || msg; } catch(_){}
+                    statusEl.textContent = msg;
+                    card.classList.add('error');
+                    showToast('❌ ' + file.name + ': ' + msg);
+                    setTimeout(() => card.remove(), 4000);
+                }
+                resolve();
+            };
+
+            xhr.onerror = () => {
+                if (cancelled) return;
+                bar.classList.add('error');
+                pctEl.className = 'uc-pct error';
+                pctEl.textContent = 'Error';
+                statusEl.textContent = 'Network error';
+                card.classList.add('error');
+                showToast('❌ Network error uploading "' + file.name + '"');
+                setTimeout(() => card.remove(), 4000);
+                resolve();
+            };
+
+            xhr.ontimeout = () => {
+                if (cancelled) return;
+                bar.classList.add('error');
+                pctEl.className = 'uc-pct error';
+                pctEl.textContent = 'Timeout';
+                statusEl.textContent = 'Request timed out';
+                card.classList.add('error');
+                showToast('❌ Timeout uploading "' + file.name + '"');
+                setTimeout(() => card.remove(), 4000);
+                resolve();
+            };
+
+            // No timeout — large files can take a long time via Telethon MTProto
+            xhr.timeout = 0;
 
             const fd = new FormData();
             fd.append('file', file);
-
-            await new Promise((resolve) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', '/api/upload', true);
-
-                let startTime = Date.now();
-
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const pct = Math.round((e.loaded / e.total) * 100);
-                        sPctEl.textContent = `${pct}%`;
-                        sBarEl.style.width = `${pct}%`;
-                        sBytesEl.textContent = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
-
-                        // Estimate time remaining
-                        const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
-                        if (elapsedTime > 0.2 && e.loaded > 0) {
-                            const speed = e.loaded / elapsedTime; // bytes per second
-                            const bytesRemaining = e.total - e.loaded;
-                            const secondsRemaining = bytesRemaining / speed;
-
-                            if (secondsRemaining <= 0) {
-                                sTimeEl.textContent = 'Processing...';
-                            } else if (secondsRemaining < 60) {
-                                sTimeEl.textContent = `${Math.round(secondsRemaining)}s left`;
-                            } else {
-                                const mins = Math.floor(secondsRemaining / 60);
-                                const secs = Math.round(secondsRemaining % 60);
-                                sTimeEl.textContent = `${mins}m ${secs}s left`;
-                            }
-                        }
-                    }
-                };
-
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve();
-                    } else {
-                        let errText = 'Upload failed';
-                        try {
-                            const d = JSON.parse(xhr.responseText);
-                            errText = d.detail || errText;
-                        } catch (err) {}
-                        alert(`Error uploading "${file.name}": ${errText}`);
-                        resolve();
-                    }
-                };
-
-                xhr.onerror = () => {
-                    alert(`Network error uploading "${file.name}"`);
-                    resolve();
-                };
-
-                xhr.send(fd);
-            });
-        }
-
-        statusBox.classList.remove('visible');
-        showToast('Assets uploaded!');
-        setTimeout(() => location.reload(), 900);
+            statusEl.textContent = 'Uploading…';
+            xhr.send(fd);
+        });
     }
 
     // ============================================================
