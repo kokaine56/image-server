@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from app.config import DOMAIN, STORAGE_CHANNEL_ID, SECRET_KEY, GUEST_LIMIT, USER_LIMIT, BOT_USERNAME, BOT_TOKEN, ADMIN_USER_IDS, LOGO_URL
 from app.database import get_db
-from app.models import Image, Analytics, BannedUser, AdminApiKey
+from app.models import Image, Analytics, BannedUser, AdminApiKey, UserLock
 from app.schemas import UploadSuccessResponse, StatsItem, ImageResponse
 from app.services.cache_service import cache_service
 from app.services.image_service import image_service
@@ -186,6 +186,22 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
         # Determine if the user is an administrator
         is_admin = user_id in ADMIN_USER_IDS
 
+        # Query if the user has set a gallery lock password
+        lock_stmt = select(UserLock).where(UserLock.telegram_id == user_id)
+        lock_res = await db.execute(lock_stmt)
+        user_lock = lock_res.scalar()
+        
+        if user_lock and not request.session.get("gallery_unlocked"):
+            return templates.TemplateResponse(
+                request=request,
+                name="unlock.html",
+                context={
+                    "username": request.session.get("username", "User"),
+                    "avatar_url": f"/avatar/{user_id}",
+                    "token": SECRET_KEY
+                }
+            )
+
         # Query all images uploaded by this user
         stmt = select(Image).where(Image.uploaded_by == user_id).order_by(Image.created_at.desc())
         res = await db.execute(stmt)
@@ -260,7 +276,8 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
                 "username": request.session.get("username", "User"),
                 "avatar_url": f"/avatar/{user_id}",
                 "user_id": user_id,
-                "token": SECRET_KEY
+                "token": SECRET_KEY,
+                "user_has_lock": user_lock is not None
             }
         )
     return templates.TemplateResponse(request=request, name="index.html")
@@ -372,6 +389,12 @@ async def admin_dashboard_view(
     # Get kick_all setting
     kick_all_enabled = await settings_service.is_kick_all_enabled(db)
     
+    # Get banned users
+    banned_stmt = select(BannedUser).order_by(BannedUser.banned_at.desc())
+    banned_res = await db.execute(banned_stmt)
+    banned_users = banned_res.scalars().all()
+    banned_ids = {u.telegram_id for u in banned_users}
+    
     return templates.TemplateResponse(
         request=request,
         name="admin.html",
@@ -381,7 +404,9 @@ async def admin_dashboard_view(
             "token": token,
             "search": search,
             "api_key": api_key,
-            "kick_all_enabled": kick_all_enabled
+            "kick_all_enabled": kick_all_enabled,
+            "banned_users": banned_users,
+            "banned_ids": banned_ids
         }
     )
 
@@ -435,6 +460,20 @@ async def admin_ban_user(
         
     ban_entry = BannedUser(telegram_id=telegram_id, reason=reason)
     db.add(ban_entry)
+    await db.commit()
+    
+    return RedirectResponse(url=f"/admin?token={token}", status_code=303)
+
+@router.post("/admin/unban/{telegram_id}")
+async def admin_unban_user(
+    telegram_id: int,
+    token: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    if not verify_admin_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    await db.execute(delete(BannedUser).where(BannedUser.telegram_id == telegram_id))
     await db.commit()
     
     return RedirectResponse(url=f"/admin?token={token}", status_code=303)
@@ -673,6 +712,8 @@ async def api_auth_webapp(
     if current_session_id != user_id:
         request.session["user_id"] = user_id
         request.session["username"] = username
+        # Reset gallery unlock status on user change
+        request.session.pop("gallery_unlocked", None)
         return {"success": True, "reload": True}
         
     return {"success": True, "reload": False}
@@ -708,6 +749,52 @@ async def api_user_delete_image(
     await db.commit()
     
     return {"success": True}
+
+@router.post("/api/user/lock/unlock")
+async def api_unlock_gallery(
+    request: Request,
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    lock_stmt = select(UserLock).where(UserLock.telegram_id == user_id)
+    lock_res = await db.execute(lock_stmt)
+    user_lock = lock_res.scalar()
+    
+    if not user_lock or user_lock.password == password:
+        request.session["gallery_unlocked"] = True
+        return RedirectResponse(url="/", status_code=303)
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="unlock.html",
+        context={
+            "username": request.session.get("username", "User"),
+            "avatar_url": f"/avatar/{user_id}",
+            "error": "Incorrect password. Please try again."
+        },
+        status_code=400
+    )
+
+@router.post("/api/user/lock/disable")
+async def api_disable_user_lock(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    await db.execute(delete(UserLock).where(UserLock.telegram_id == user_id))
+    await db.commit()
+    
+    # Reset unlocked state
+    request.session.pop("gallery_unlocked", None)
+    
+    return RedirectResponse(url="/", status_code=303)
 
 @router.post("/api/upload", response_model=UploadSuccessResponse)
 async def api_upload_image(

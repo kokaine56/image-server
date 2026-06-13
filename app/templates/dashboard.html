@@ -648,6 +648,32 @@
             </div>
         </div>
 
+        <!-- Gallery Security -->
+        <div class="tele-section">
+            <div class="tele-section-title">Gallery Security</div>
+            <div class="tele-grid">
+                {% if user_has_lock %}
+                <div class="tele-card full">
+                    <span class="tele-card-label">Status</span>
+                    <span class="tele-card-value green small">🔒 Password Lock Active</span>
+                    <form action="/api/user/lock/disable" method="POST" style="margin-top: 10px;" onsubmit="return confirm('Are you sure you want to disable the password lock?');">
+                        <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/10 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all w-full text-center">
+                            Toggle Off Password
+                        </button>
+                    </form>
+                </div>
+                {% else %}
+                <div class="tele-card full">
+                    <span class="tele-card-label">Status</span>
+                    <span class="tele-card-value small text-[#64748B]">🔓 Lock Inactive</span>
+                    <p style="font-size: 10px; color: #475569; margin-top: 6px; line-height: 1.4;">
+                        To secure your gallery, send <code>/lock &lt;password&gt;</code> to the Telegram bot (e.g. <code>/lock 1456</code>).
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Gallery Stats -->
         <div class="tele-section">
             <div class="tele-section-title">Gallery Statistics</div>
@@ -880,11 +906,6 @@
         document.body.style.overflow = 'hidden';
     }
 
-    function closeTelePanel() {
-        document.getElementById('tele-panel').classList.remove('open');
-        document.body.style.overflow = '';
-    }
-
     // ============================================================
     // UPLOAD
     // ============================================================
@@ -932,6 +953,11 @@
         statusBox.classList.remove('visible');
         showToast('Images uploaded!');
         setTimeout(() => location.reload(), 900);
+    }
+
+    function closeTelePanel() {
+        document.getElementById('tele-panel').classList.remove('open');
+        document.body.style.overflow = '';
     }
 </script>
 {% endblock %}

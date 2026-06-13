@@ -183,6 +183,91 @@
         </div>
     </div>
 
+    <!-- Banned Users Database -->
+    <div class="border-gradient-wrapper">
+        <div class="border-gradient-card p-4 sm:p-5 flex flex-col gap-4">
+            <div class="flex justify-between items-center border-b border-white/5 pb-4">
+                <div>
+                    <h2 class="font-outfit text-base font-bold text-white">Banned Users</h2>
+                    <p class="text-[10px] text-[#64748B] mt-0.5">Manage users restricted from using the service.</p>
+                </div>
+                <div class="bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-xl text-[10px] font-semibold text-rose-400">
+                    <i class="fa-solid fa-user-slash mr-1"></i>{{ banned_users|length }} Restricted
+                </div>
+            </div>
+
+            <!-- Desktop Banned Table (Hidden on Mobile) -->
+            <div class="hidden md:block overflow-x-auto w-full">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="border-b border-white/5 text-[#64748B] font-bold">
+                            <th class="py-2.5 px-3">Telegram ID</th>
+                            <th class="py-2.5 px-3">Banned At</th>
+                            <th class="py-2.5 px-3">Reason</th>
+                            <th class="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                        {% for u in banned_users %}
+                        <tr class="hover:bg-white/[0.015] transition-colors">
+                            <td class="py-2.5 px-3 font-mono text-[#94A3B8]">{{ u.telegram_id }}</td>
+                            <td class="py-2.5 px-3 text-[#94A3B8]">{{ u.banned_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td class="py-2.5 px-3 text-[#94A3B8]">{{ u.reason or 'No reason provided' }}</td>
+                            <td class="py-2.5 px-3 text-right">
+                                <form action="/admin/unban/{{ u.telegram_id }}" method="POST" onsubmit="return confirm('Are you sure you want to unban this user?');">
+                                    <input type="hidden" name="token" value="{{ token }}">
+                                    <button type="submit" class="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/10 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
+                                        <i class="fa-solid fa-user-check mr-1.5"></i>Unban
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not banned_users %}
+                        <tr>
+                            <td colspan="4" class="py-10 text-center text-[#475569] font-medium">
+                                No banned users found.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Mobile Banned View (Hidden on Desktop) -->
+            <div class="block md:hidden flex flex-col gap-3">
+                {% for u in banned_users %}
+                <div class="glass-card p-3.5 flex flex-col gap-2.5 border border-white/5 bg-white/[0.005]">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="text-[8px] text-[#64748B] block">Telegram ID</span>
+                            <span class="font-mono text-white text-xs font-bold">{{ u.telegram_id }}</span>
+                        </div>
+                        <span class="text-[9px] text-[#64748B]">{{ u.banned_at.strftime('%Y-%m-%d') }}</span>
+                    </div>
+                    <div>
+                        <span class="text-[8px] text-[#64748B] block">Reason</span>
+                        <p class="text-xs text-[#CBD5E1] font-medium">{{ u.reason or 'No reason provided' }}</p>
+                    </div>
+                    <div class="border-t border-white/5 pt-2 mt-0.5">
+                        <form action="/admin/unban/{{ u.telegram_id }}" method="POST" onsubmit="return confirm('Are you sure you want to unban this user?');" class="w-full">
+                            <input type="hidden" name="token" value="{{ token }}">
+                            <button type="submit" class="w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 border border-emerald-500/10 min-h-[38px]">
+                                <i class="fa-solid fa-user-check text-xs"></i>Unban User
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+                {% if not banned_users %}
+                <div class="glass-card p-6 text-center text-[#475569] font-medium text-xs">
+                    No banned users found.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
     <!-- Image Management Database -->
     <div class="border-gradient-wrapper">
         <div class="border-gradient-card p-4 sm:p-5 flex flex-col gap-4">
@@ -248,12 +333,21 @@
                                     </button>
                                 </form>
                                 {% if img.uploaded_by %}
-                                <form action="/admin/ban/{{ img.uploaded_by }}" method="POST" onsubmit="return confirm('Are you sure you want to ban this user?');">
-                                    <input type="hidden" name="token" value="{{ token }}">
-                                    <button type="submit" class="text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 p-1.5 rounded transition-all">
-                                        <i class="fa-solid fa-ban"></i>
-                                    </button>
-                                </form>
+                                    {% if img.uploaded_by in banned_ids %}
+                                    <form action="/admin/unban/{{ img.uploaded_by }}" method="POST" onsubmit="return confirm('Are you sure you want to unban this user?');">
+                                        <input type="hidden" name="token" value="{{ token }}">
+                                        <button type="submit" class="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-1.5 rounded transition-all" title="Unban User">
+                                            <i class="fa-solid fa-user-check"></i>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <form action="/admin/ban/{{ img.uploaded_by }}" method="POST" onsubmit="return confirm('Are you sure you want to ban this user?');">
+                                        <input type="hidden" name="token" value="{{ token }}">
+                                        <button type="submit" class="text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 p-1.5 rounded transition-all" title="Ban User">
+                                            <i class="fa-solid fa-ban"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
                                 {% endif %}
                             </td>
                         </tr>
@@ -315,12 +409,21 @@
                             </button>
                         </form>
                         {% if img.uploaded_by %}
-                        <form action="/admin/ban/{{ img.uploaded_by }}" method="POST" onsubmit="return confirm('Are you sure you want to ban this user?');" class="w-full">
-                            <input type="hidden" name="token" value="{{ token }}">
-                            <button type="submit" class="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 border border-amber-500/10 min-h-[38px]">
-                                <i class="fa-solid fa-ban text-xs"></i>Ban User
-                            </button>
-                        </form>
+                            {% if img.uploaded_by in banned_ids %}
+                            <form action="/admin/unban/{{ img.uploaded_by }}" method="POST" onsubmit="return confirm('Are you sure you want to unban this user?');" class="w-full">
+                                <input type="hidden" name="token" value="{{ token }}">
+                                <button type="submit" class="w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 border border-emerald-500/10 min-h-[38px]">
+                                    <i class="fa-solid fa-user-check text-xs"></i>Unban User
+                                </button>
+                            </form>
+                            {% else %}
+                            <form action="/admin/ban/{{ img.uploaded_by }}" method="POST" onsubmit="return confirm('Are you sure you want to ban this user?');" class="w-full">
+                                <input type="hidden" name="token" value="{{ token }}">
+                                <button type="submit" class="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 border border-amber-500/10 min-h-[38px]">
+                                    <i class="fa-solid fa-ban text-xs"></i>Ban User
+                                </button>
+                            </form>
+                            {% endif %}
                         {% endif %}
                     </div>
                 </div>

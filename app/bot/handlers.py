@@ -11,7 +11,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from app.config import STORAGE_CHANNEL_ID, DOMAIN, USER_LIMIT, ADMIN_USER_IDS, SECRET_KEY
 from app.database import async_session
-from app.models import Image, BannedUser
+from app.models import Image, BannedUser, UserLock
 from app.services.moderation_service import moderation_service
 from app.services.image_service import image_service
 from app.services.cache_service import cache_service
@@ -265,7 +265,8 @@ async def start_command(message: Message):
         "<b>Commands:</b>\n"
         "/help - How to use the bot\n"
         "/stats - Quick bot storage metrics\n"
-        "/myuploads - View your hosted uploads"
+        "/myuploads - View your hosted uploads\n"
+        "/lock &lt;password&gt; - Lock your web gallery"
     )
     await message.reply(welcome_text)
 
@@ -286,6 +287,8 @@ async def help_command(message: Message):
         "3. It checks the content for safety and stores it in our secure channel storage.\n"
         "4. You can send multiple images at a time (albums up to 10 files).\n"
         "5. You will receive a direct preview link, a raw image URL, and a deletion token.\n\n"
+        "<b>Security Options:</b>\n"
+        "• <code>/lock &lt;password&gt;</code> - Secure your web gallery dashboard with a custom password/PIN.\n\n"
         "<b>Upload Limits:</b>\n"
         f"- Up to {USER_LIMIT} uploads per day (resets daily at 12:00 AM IST)."
     )
@@ -459,6 +462,35 @@ async def protection_command(message: Message):
                 f"• <code>/protection on</code>\n"
                 f"• <code>/protection off</code>"
             )
+
+@router.message(Command("lock"))
+async def lock_command(message: Message):
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply("🔑 <b>How to lock your gallery:</b>\nUse <code>/lock &lt;password&gt;</code> to set a password (e.g., <code>/lock 1456</code>).")
+        return
+        
+    password = parts[1].strip()
+    if not password:
+        await message.reply("❌ Password cannot be empty.")
+        return
+        
+    user_id = message.from_user.id
+    async with async_session() as db:
+        # Check if user already has a lock entry
+        stmt = select(UserLock).where(UserLock.telegram_id == user_id)
+        res = await db.execute(stmt)
+        lock_entry = res.scalar()
+        
+        if lock_entry:
+            lock_entry.password = password
+        else:
+            lock_entry = UserLock(telegram_id=user_id, password=password)
+            db.add(lock_entry)
+            
+        await db.commit()
+        
+    await message.reply(f"🔒 <b>Gallery locked successfully!</b>\nYour password has been set. You will be asked for this password when opening the gallery web page.")
 
 @router.chat_join_request()
 async def handle_chat_join_request(event: ChatJoinRequest):

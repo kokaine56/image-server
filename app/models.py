@@ -56,3 +56,10 @@ class SystemSetting(Base):
 
     key = Column(String(100), primary_key=True)
     value = Column(String(255), nullable=False)
+
+
+class UserLock(Base):
+    __tablename__ = "user_locks"
+
+    telegram_id = Column(BigInteger, primary_key=True)
+    password = Column(String(255), nullable=False)
