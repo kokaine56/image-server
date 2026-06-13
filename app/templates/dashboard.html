@@ -502,169 +502,229 @@
 /* ============================================================
    MULTI-FILE UPLOAD QUEUE PANEL
    ============================================================ */
-#upload-queue-panel {
+#upload-queue-wrapper {
     position: fixed;
     bottom: 90px;
     right: 20px;
     left: 20px;
     margin: 0 auto;
     max-width: 420px;
+    z-index: 300;
+    display: none;   /* shown by JS when first upload starts */
+}
+#upload-queue-wrapper.uq-visible { display: block; }
+
+/* Panel header — tap to minimize */
+#upload-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px 6px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+#upload-panel-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #60A5FA;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+#upload-minimize-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #64748B;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: background 0.18s, color 0.18s;
+    letter-spacing: .04em;
+}
+#upload-minimize-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+#upload-cards-container {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    z-index: 300;
-    pointer-events: none;
-    max-height: 70vh;
+    max-height: 60vh;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: none;
+    pointer-events: none;
+    transition: max-height 0.35s cubic-bezier(0.16,1,0.3,1),
+                opacity    0.28s ease;
 }
-#upload-queue-panel::-webkit-scrollbar { display: none; }
+#upload-cards-container::-webkit-scrollbar { display: none; }
+
+/* Minimized state — cards collapse, only bubble shown */
+#upload-queue-wrapper.uq-minimized #upload-panel-header { display: none; }
+#upload-queue-wrapper.uq-minimized #upload-cards-container {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ---- Upload Bubble ---- */
+#upload-bubble {
+    position: fixed;
+    right: 18px;
+    bottom: 92px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(7,8,14,0.97);
+    border: 2px solid rgba(59,130,246,0.4);
+    box-shadow: 0 8px 28px -6px rgba(0,0,0,0.85), 0 0 0 4px rgba(59,130,246,0.1);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 310;
+    flex-direction: column;
+    gap: 1px;
+    backdrop-filter: blur(20px);
+    transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s;
+}
+#upload-bubble:hover { transform: scale(1.08); box-shadow: 0 12px 36px -6px rgba(0,0,0,0.9), 0 0 0 6px rgba(59,130,246,0.15); }
+#upload-bubble.visible { display: flex; }
+
+#bubble-ring-svg {
+    position: absolute;
+    inset: -2px;
+    width: calc(100% + 4px);
+    height: calc(100% + 4px);
+    transform: rotate(-90deg);
+    pointer-events: none;
+}
+#bubble-ring-track {
+    fill: none;
+    stroke: rgba(255,255,255,0.06);
+    stroke-width: 3;
+}
+#bubble-ring-fill {
+    fill: none;
+    stroke: url(#bubbleGrad);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.35s cubic-bezier(0.16,1,0.3,1);
+}
+#bubble-count {
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 900;
+    color: #fff;
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+}
+#bubble-label {
+    font-size: 7px;
+    font-weight: 700;
+    color: #60A5FA;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+}
 
 .upload-card {
     background: rgba(7, 8, 14, 0.97);
     border: 1px solid rgba(59, 130, 246, 0.22);
-    border-radius: 16px;
-    padding: 12px 14px;
+    border-radius: 14px;
+    padding: 11px 13px;
     display: flex;
     flex-direction: column;
     gap: 8px;
     pointer-events: auto;
-    box-shadow: 0 12px 36px -8px rgba(0,0,0,0.85);
+    box-shadow: 0 10px 30px -8px rgba(0,0,0,0.85);
     backdrop-filter: blur(22px);
-    transform: translateY(30px) scale(0.96);
+    transform: translateY(28px) scale(0.96);
     opacity: 0;
     animation: cardIn 0.32s cubic-bezier(0.16,1,0.3,1) forwards;
 }
-.upload-card.done {
-    border-color: rgba(52,211,153,0.3);
-    animation: cardOut 0.38s 1.2s cubic-bezier(0.4,0,1,1) forwards;
-}
-.upload-card.error {
-    border-color: rgba(239,68,68,0.3);
-    animation: cardOut 0.38s 2.5s cubic-bezier(0.4,0,1,1) forwards;
-}
-.upload-card.cancelled {
-    animation: cardOut 0.25s 0.1s cubic-bezier(0.4,0,1,1) forwards;
-}
-@keyframes cardIn {
-    to { transform: translateY(0) scale(1); opacity: 1; }
-}
-@keyframes cardOut {
-    to { transform: translateY(20px) scale(0.92); opacity: 0; pointer-events: none; }
-}
+.upload-card.done   { border-color: rgba(52,211,153,0.3);  animation: cardOut 0.38s 1.4s cubic-bezier(0.4,0,1,1) forwards; }
+.upload-card.error  { border-color: rgba(239,68,68,0.3);   animation: cardOut 0.38s 2.8s cubic-bezier(0.4,0,1,1) forwards; }
+.upload-card.cancelled { animation: cardOut 0.22s 0.05s cubic-bezier(0.4,0,1,1) forwards; }
+@keyframes cardIn  { to { transform: translateY(0) scale(1); opacity: 1; } }
+@keyframes cardOut { to { transform: translateY(18px) scale(0.91); opacity: 0; pointer-events: none; } }
 
-.uc-row1 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
+.uc-row1 { display: flex; align-items: center; gap: 10px; }
 .uc-thumb {
-    width: 38px;
-    height: 38px;
-    border-radius: 8px;
-    object-fit: cover;
+    width: 38px; height: 38px; border-radius: 8px;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.07);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    color: #60A5FA;
-    flex-shrink: 0;
-    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: #60A5FA; flex-shrink: 0; overflow: hidden;
 }
-.uc-thumb img, .uc-thumb video, .uc-thumb canvas {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 8px;
-}
-.uc-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
+.uc-thumb img, .uc-thumb canvas { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.uc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .uc-name {
-    font-family: 'Inter', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    color: #fff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.uc-meta {
-    font-size: 9px;
-    color: #64748B;
-    font-weight: 600;
-}
+.uc-meta { font-size: 9px; color: #64748B; font-weight: 600; }
 .uc-cancel {
-    background: rgba(239,68,68,0.08);
-    border: 1px solid rgba(239,68,68,0.18);
-    border-radius: 8px;
-    padding: 5px 9px;
-    font-size: 9px;
-    font-weight: 800;
-    color: #F87171;
-    cursor: pointer;
+    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.18);
+    border-radius: 7px; padding: 4px 8px; font-size: 9px; font-weight: 800;
+    color: #F87171; cursor: pointer; flex-shrink: 0;
+    font-family: 'Inter', sans-serif; letter-spacing: .04em; text-transform: uppercase;
     transition: background 0.18s;
-    flex-shrink: 0;
-    font-family: 'Inter', sans-serif;
-    letter-spacing: .04em;
-    text-transform: uppercase;
 }
 .uc-cancel:hover { background: rgba(239,68,68,0.18); }
-.uc-cancel:disabled { opacity: 0.35; cursor: not-allowed; }
+.uc-cancel:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* Two-segment progress track */
 .uc-bar-wrap {
-    width: 100%;
-    height: 5px;
+    width: 100%; height: 5px;
     background: rgba(255,255,255,0.05);
-    border-radius: 99px;
-    overflow: hidden;
+    border-radius: 99px; overflow: hidden;
+    position: relative;
 }
-.uc-bar {
-    height: 100%;
-    width: 0%;
+/* Segment 1 — browser→server (blue) */
+.uc-bar-upload {
+    position: absolute; left: 0; top: 0; height: 100%;
     border-radius: 99px;
-    background: linear-gradient(90deg, #3B82F6, #6366F1);
+    background: linear-gradient(90deg,#3B82F6,#6366F1);
     transition: width 0.12s linear;
+    width: 0%;
 }
-.uc-bar.processing {
-    background: linear-gradient(90deg, #F59E0B, #EF4444);
-    animation: processingPulse 1.4s ease-in-out infinite;
-    width: 100% !important;
+/* Segment 2 — Telegram MTProto processing (amber→red) */
+.uc-bar-tg {
+    position: absolute; left: 0; top: 0; height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg,#F59E0B,#EF4444);
+    transition: width 0.25s linear;
+    width: 0%;
+    opacity: 0;
 }
-.uc-bar.done {
-    background: linear-gradient(90deg, #10B981, #34D399);
-    width: 100% !important;
-}
-.uc-bar.error { background: #EF4444; width: 100% !important; }
-@keyframes processingPulse {
-    0%, 100% { opacity: 0.55; }
-    50%       { opacity: 1; }
-}
+.uc-bar-tg.active  { opacity: 1; }
+.uc-bar-tg.done    { background: linear-gradient(90deg,#10B981,#34D399); width: 100% !important; transition: width 0.18s ease; }
+.uc-bar-tg.error   { background: #EF4444; width: 100% !important; }
 
-.uc-row3 {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 9px;
-    color: #64748B;
-    font-weight: 600;
+.uc-row3 { display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #64748B; font-weight: 600; }
+.uc-pct { font-family: 'Outfit', sans-serif; font-size: 10px; font-weight: 800; color: #60A5FA; }
+.uc-pct.tg   { color: #F59E0B; }
+.uc-pct.done { color: #34D399; }
+.uc-pct.error{ color: #F87171; }
+
+/* Phase label badge */
+.uc-phase {
+    font-size: 8px; font-weight: 700; letter-spacing: .05em; padding: 2px 6px;
+    border-radius: 99px; background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(59,130,246,0.2); color: #60A5FA;
+    transition: all 0.25s;
 }
-.uc-pct {
-    font-family: 'Outfit', sans-serif;
-    font-size: 10px;
-    font-weight: 800;
-    color: #60A5FA;
-}
-.uc-pct.processing { color: #F59E0B; }
-.uc-pct.done       { color: #34D399; }
-.uc-pct.error      { color: #F87171; }
+.uc-phase.tg   { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.25); color: #FCD34D; }
+.uc-phase.done { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.25); color: #34D399; }
+.uc-phase.error{ background: rgba(239,68,68,0.1);  border-color: rgba(239,68,68,0.25);  color: #F87171; }
 </style>
 {% endblock %}
 
@@ -856,7 +916,34 @@
 </button>
 
 <!-- =================== MULTI-FILE UPLOAD QUEUE PANEL =================== -->
-<div id="upload-queue-panel"></div>
+<div id="upload-queue-wrapper">
+    <div id="upload-panel-header" onclick="minimizeUploadPanel()">
+        <span id="upload-panel-title">
+            <i class="fa-solid fa-arrow-up-from-bracket" style="font-size:10px;"></i>
+            Uploading
+        </span>
+        <button id="upload-minimize-btn" tabindex="-1">Minimize ⬇</button>
+    </div>
+    <div id="upload-cards-container"></div>
+</div>
+
+<!-- =================== UPLOAD BUBBLE (minimized state) =================== -->
+<div id="upload-bubble" onclick="expandUploadPanel()" title="Show uploads">
+    <svg id="bubble-ring-svg" viewBox="0 0 60 60">
+        <defs>
+            <linearGradient id="bubbleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3B82F6"/>
+                <stop offset="100%" stop-color="#F59E0B"/>
+            </linearGradient>
+        </defs>
+        <circle id="bubble-ring-track" cx="30" cy="30" r="26"/>
+        <circle id="bubble-ring-fill"  cx="30" cy="30" r="26"
+                stroke-dasharray="163.4"
+                stroke-dashoffset="163.4"/>
+    </svg>
+    <span id="bubble-count">0</span>
+    <span id="bubble-label">files</span>
+</div>
 <div id="lightbox">
     <!-- Top bar -->
     <div id="lb-topbar">
@@ -1415,18 +1502,49 @@
     }
 
     // ============================================================
-    // UPLOAD — Multi-queue, per-file cards, video thumbnails,
-    //          cancel support, background-safe (no alert blocking)
+    // UPLOAD — Multi-queue, per-file cards, two-phase progress,
+    //          minimize-to-bubble, video thumbnails, toast errors
     // ============================================================
-    const fileInput   = document.getElementById('file-input');
-    const queuePanel  = document.getElementById('upload-queue-panel');
+    const fileInput      = document.getElementById('file-input');
+    const queueWrapper   = document.getElementById('upload-queue-wrapper');
+    const cardsContainer = document.getElementById('upload-cards-container');
+    const bubble         = document.getElementById('upload-bubble');
+    const bubbleCount    = document.getElementById('bubble-count');
+    const bubbleRingFill = document.getElementById('bubble-ring-fill');
+    const RING_CIRC      = 163.4; // 2π × r=26
+
+    let totalFiles  = 0;   // files in current batch
+    let doneFiles   = 0;   // completed (success or fail)
+    let globalPct   = 0;   // 0-100 overall progress
+
+    function updateBubble() {
+        const active = totalFiles - doneFiles;
+        bubbleCount.textContent = active > 0 ? active : '✓';
+        const offset = RING_CIRC - (globalPct / 100) * RING_CIRC;
+        bubbleRingFill.style.strokeDashoffset = offset;
+    }
+
+    function showQueuePanel() {
+        queueWrapper.classList.add('uq-visible');
+        queueWrapper.classList.remove('uq-minimized');
+        bubble.classList.remove('visible');
+    }
+    function minimizeUploadPanel() {
+        queueWrapper.classList.add('uq-minimized');
+        bubble.classList.add('visible');
+        updateBubble();
+    }
+    function expandUploadPanel() {
+        queueWrapper.classList.remove('uq-minimized');
+        bubble.classList.remove('visible');
+    }
 
     function triggerFileUpload() { fileInput.click(); }
 
     fileInput.addEventListener('change', () => {
         if (fileInput.files.length > 0) {
             handleUploads(fileInput.files);
-            fileInput.value = ''; // allow re-selecting same file
+            fileInput.value = '';
         }
     });
 
@@ -1448,26 +1566,48 @@
         return (b / Math.pow(k, i)).toFixed(1) + ' ' + s[i];
     };
 
-    // Generate video thumbnail via canvas (client-side, no server round-trip)
+    // ---- video thumbnail via canvas ----
     function getVideoThumbnail(file) {
         return new Promise(resolve => {
             const url = URL.createObjectURL(file);
             const vid = document.createElement('video');
             vid.muted = true; vid.playsInline = true; vid.preload = 'metadata';
             vid.src = url;
-            vid.addEventListener('loadeddata', () => {
-                vid.currentTime = Math.min(1, vid.duration * 0.1);
-            }, { once: true });
+            vid.addEventListener('loadeddata', () => { vid.currentTime = Math.min(1, vid.duration * 0.1); }, { once: true });
             vid.addEventListener('seeked', () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = 80; canvas.height = 80;
-                canvas.getContext('2d').drawImage(vid, 0, 0, 80, 80);
+                const c = document.createElement('canvas');
+                c.width = 80; c.height = 80;
+                c.getContext('2d').drawImage(vid, 0, 0, 80, 80);
                 URL.revokeObjectURL(url);
-                resolve(canvas.toDataURL('image/jpeg', 0.7));
+                resolve(c.toDataURL('image/jpeg', 0.7));
             }, { once: true });
             vid.addEventListener('error', () => { URL.revokeObjectURL(url); resolve(null); }, { once: true });
-            setTimeout(() => { URL.revokeObjectURL(url); resolve(null); }, 4000); // timeout fallback
+            setTimeout(() => { URL.revokeObjectURL(url); resolve(null); }, 4000);
         });
+    }
+
+    // ---- inject spin keyframe once ----
+    if (!document.getElementById('spin-kf')) {
+        const s = document.createElement('style');
+        s.id = 'spin-kf';
+        s.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+        document.head.appendChild(s);
+    }
+
+    // ---- per-file progress tracking ----
+    const fileProgMap = new Map(); // file object → {uploadPct, tgPct, phase:'upload'|'tg'|'done'|'error'}
+
+    function recalcGlobalPct() {
+        if (!fileProgMap.size) { globalPct = 0; return; }
+        let sum = 0;
+        fileProgMap.forEach(v => {
+            const p = v.phase === 'upload' ? v.uploadPct * 0.5 :
+                      v.phase === 'tg'     ? 50 + v.tgPct * 0.5 :
+                      100;
+            sum += p;
+        });
+        globalPct = Math.round(sum / fileProgMap.size);
+        updateBubble();
     }
 
     // ---- card factory ----
@@ -1502,56 +1642,36 @@
             thumbDiv.innerHTML = '<i class="fa-regular fa-file" style="color:#94A3B8;"></i>';
         }
 
-        // Info block
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'uc-info';
-        const nameEl = document.createElement('div');
-        nameEl.className = 'uc-name';
-        nameEl.title = file.name;
-        nameEl.textContent = file.name;
-        const metaEl = document.createElement('div');
-        metaEl.className = 'uc-meta';
-        metaEl.textContent = formatBytes(file.size);
+        // Info
+        const infoDiv = document.createElement('div'); infoDiv.className = 'uc-info';
+        const nameEl  = document.createElement('div'); nameEl.className  = 'uc-name'; nameEl.title = file.name; nameEl.textContent = file.name;
+        const metaEl  = document.createElement('div'); metaEl.className  = 'uc-meta'; metaEl.textContent = formatBytes(file.size);
         infoDiv.append(nameEl, metaEl);
 
-        // Cancel button
+        // Cancel
         const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'uc-cancel';
-        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'uc-cancel'; cancelBtn.textContent = 'Cancel';
 
-        const row1 = document.createElement('div');
-        row1.className = 'uc-row1';
+        const row1 = document.createElement('div'); row1.className = 'uc-row1';
         row1.append(thumbDiv, infoDiv, cancelBtn);
 
-        // Progress bar
-        const barWrap = document.createElement('div');
-        barWrap.className = 'uc-bar-wrap';
-        const bar = document.createElement('div');
-        bar.className = 'uc-bar';
-        barWrap.appendChild(bar);
+        // Two-segment progress bar
+        const barWrap   = document.createElement('div'); barWrap.className = 'uc-bar-wrap';
+        const barUpload = document.createElement('div'); barUpload.className = 'uc-bar-upload'; // blue: browser→server
+        const barTg     = document.createElement('div'); barTg.className    = 'uc-bar-tg';     // amber: server→Telegram
+        barWrap.append(barUpload, barTg);
 
-        // Row3: status
-        const row3 = document.createElement('div');
-        row3.className = 'uc-row3';
-        const statusEl = document.createElement('span');
-        statusEl.textContent = 'Queued';
-        const pctEl = document.createElement('span');
-        pctEl.className = 'uc-pct';
-        pctEl.textContent = '0%';
-        row3.append(statusEl, pctEl);
+        // Status row
+        const row3     = document.createElement('div'); row3.className = 'uc-row3';
+        const statusEl = document.createElement('span'); statusEl.textContent = 'Queued';
+        const pctEl    = document.createElement('span'); pctEl.className = 'uc-pct'; pctEl.textContent = '0%';
+        const phaseEl  = document.createElement('span'); phaseEl.className = 'uc-phase'; phaseEl.textContent = 'Upload';
+        row3.append(statusEl, phaseEl, pctEl);
 
         card.append(row1, barWrap, row3);
-        queuePanel.appendChild(card);
+        cardsContainer.appendChild(card);
 
-        return { card, bar, statusEl, pctEl, cancelBtn };
-    }
-
-    // ---- spin keyframe (injected once) ----
-    if (!document.getElementById('spin-kf')) {
-        const s = document.createElement('style');
-        s.id = 'spin-kf';
-        s.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
-        document.head.appendChild(s);
+        return { card, barUpload, barTg, statusEl, pctEl, phaseEl, cancelBtn };
     }
 
     let anySucceeded = false;
@@ -1559,13 +1679,19 @@
     async function handleUploads(fileList) {
         let files = Array.from(fileList);
         if (!files.length) return;
-        if (files.length > 10) { showToast('Max 10 files at a time. First 10 selected.'); files = files.slice(0, 10); }
+        if (files.length > 10) { showToast('Max 10 files at a time.'); files = files.slice(0, 10); }
 
-        // Process files in parallel (up to 3 concurrent) using a semaphore
-        const MAX_CONCURRENT = 3;
-        let active = 0;
-        let idx = 0;
+        totalFiles = files.length;
+        doneFiles  = 0;
+        globalPct  = 0;
         anySucceeded = false;
+        fileProgMap.clear();
+        files.forEach(f => fileProgMap.set(f, { uploadPct: 0, tgPct: 0, phase: 'upload' }));
+
+        showQueuePanel();
+
+        const MAX_CONCURRENT = 3;
+        let active = 0, idx = 0;
 
         await new Promise(outerResolve => {
             function tryNext() {
@@ -1574,6 +1700,7 @@
                     active++;
                     uploadOne(file).then(() => {
                         active--;
+                        doneFiles++;
                         if (active === 0 && idx >= files.length) outerResolve();
                         else tryNext();
                     });
@@ -1582,114 +1709,162 @@
             tryNext();
         });
 
+        fileProgMap.clear();
+        setTimeout(() => {
+            queueWrapper.classList.remove('uq-visible', 'uq-minimized');
+            bubble.classList.remove('visible');
+        }, 2200);
+
         if (anySucceeded) {
             showToast('✅ Upload complete!');
-            setTimeout(() => location.reload(), 1200);
+            setTimeout(() => location.reload(), 1400);
         }
     }
 
     async function uploadOne(file) {
-        const { card, bar, statusEl, pctEl, cancelBtn } = await createCard(file);
+        const { card, barUpload, barTg, statusEl, pctEl, phaseEl, cancelBtn } = await createCard(file);
+        const tracker = fileProgMap.get(file);
 
         return new Promise(resolve => {
             const xhr = new XMLHttpRequest();
             let cancelled = false;
             let startTime = Date.now();
+            let tgTimer   = null; // interval for simulated Telethon progress
+
+            function finishTgTimer() {
+                if (tgTimer) { clearInterval(tgTimer); tgTimer = null; }
+            }
 
             cancelBtn.addEventListener('click', () => {
+                if (cancelled) return;
                 cancelled = true;
+                finishTgTimer();
                 xhr.abort();
                 card.classList.add('cancelled');
                 pctEl.textContent = 'Cancelled';
                 statusEl.textContent = 'Aborted';
-                setTimeout(() => card.remove(), 600);
+                if (tracker) tracker.phase = 'done';
+                recalcGlobalPct();
+                setTimeout(() => card.remove(), 500);
                 resolve();
             });
 
             xhr.open('POST', '/api/upload', true);
+            xhr.timeout = 0;
 
-            // Phase 1: browser → server progress
+            // ── Phase 1: Browser → Server ──────────────────────────
             xhr.upload.onprogress = e => {
                 if (!e.lengthComputable || cancelled) return;
                 const pct = Math.round((e.loaded / e.total) * 100);
-                bar.style.width = pct + '%';
+
+                // Upload bar fills 0→100% in the LEFT half of the track
+                barUpload.style.width = pct + '%';
                 pctEl.textContent = pct + '%';
 
+                if (tracker) { tracker.uploadPct = pct; recalcGlobalPct(); }
+
                 const elapsed = (Date.now() - startTime) / 1000;
-                if (elapsed > 0.2 && e.loaded > 0) {
+                if (elapsed > 0.3 && e.loaded > 0) {
                     const speed = e.loaded / elapsed;
-                    const rem = (e.total - e.loaded) / speed;
-                    if (rem <= 0) {
-                        statusEl.textContent = 'Sending to Telegram…';
-                    } else if (rem < 60) {
-                        statusEl.textContent = Math.round(rem) + 's left';
-                    } else {
-                        statusEl.textContent = Math.floor(rem/60) + 'm ' + Math.round(rem%60) + 's left';
-                    }
+                    const rem   = (e.total - e.loaded) / speed;
+                    statusEl.textContent = rem <= 0 ? 'Processing…' :
+                        rem < 60 ? Math.round(rem) + 's left' :
+                        Math.floor(rem/60) + 'm ' + Math.round(rem%60) + 's left';
                 }
 
-                // Phase 2: 100% browser→server → switch to processing pulse
-                if (pct === 100) {
-                    bar.classList.add('processing');
-                    pctEl.className = 'uc-pct processing';
-                    pctEl.textContent = '100%';
-                    statusEl.textContent = '⚡ Sending to Telegram…';
+                // Transition to Phase 2 when browser→server is done
+                if (pct >= 100) {
                     cancelBtn.disabled = true;
+                    phaseEl.className = 'uc-phase tg';
+                    phaseEl.textContent = '⚡ Telegram';
+                    pctEl.className = 'uc-pct tg';
+                    pctEl.textContent = '0%';
+                    statusEl.textContent = 'Sending to Telegram…';
+                    if (tracker) { tracker.phase = 'tg'; tracker.tgPct = 0; }
+
+                    // ── Phase 2: Simulated Telethon progress ──────────
+                    // Estimate: Telethon MTProto ≈ 3 MB/s on average
+                    const estMs = Math.max(3000, (file.size / (3 * 1024 * 1024)) * 1000);
+                    const tickMs = 120;
+                    const step   = (95 / (estMs / tickMs)); // advance per tick, stop at 95%
+                    let simPct   = 0;
+
+                    barTg.classList.add('active');
+                    barTg.style.width = '0%';
+
+                    tgTimer = setInterval(() => {
+                        if (cancelled) { finishTgTimer(); return; }
+                        simPct = Math.min(95, simPct + step);
+                        barTg.style.width = simPct + '%';
+                        pctEl.textContent = Math.round(simPct) + '%';
+                        if (tracker) { tracker.tgPct = simPct; recalcGlobalPct(); }
+                    }, tickMs);
                 }
             };
 
+            // ── Server response ────────────────────────────────────
             xhr.onload = () => {
                 if (cancelled) return;
-                bar.classList.remove('processing');
+                finishTgTimer();
                 cancelBtn.disabled = true;
 
                 if (xhr.status >= 200 && xhr.status < 300) {
-                    bar.classList.add('done');
+                    // Snap both bars to 100% → green
+                    barUpload.style.width = '100%';
+                    barTg.classList.add('done');
                     pctEl.className = 'uc-pct done';
-                    pctEl.textContent = '✓ Done';
-                    statusEl.textContent = 'Saved to channel';
+                    pctEl.textContent = '✓ 100%';
+                    phaseEl.className = 'uc-phase done';
+                    phaseEl.textContent = 'Saved';
+                    statusEl.textContent = 'In Telegram channel ✓';
+                    card.classList.add('done');
                     anySucceeded = true;
-                    setTimeout(() => card.remove(), 2000);
+                    if (tracker) { tracker.phase = 'done'; tracker.tgPct = 100; recalcGlobalPct(); }
+                    setTimeout(() => card.remove(), 2400);
                 } else {
-                    bar.classList.add('error');
+                    barTg.classList.add('error');
                     pctEl.className = 'uc-pct error';
-                    pctEl.textContent = 'Failed';
+                    pctEl.textContent = '✕ Failed';
+                    phaseEl.className = 'uc-phase error';
+                    phaseEl.textContent = 'Error';
                     let msg = 'Upload failed';
                     try { msg = JSON.parse(xhr.responseText).detail || msg; } catch(_){}
                     statusEl.textContent = msg;
                     card.classList.add('error');
                     showToast('❌ ' + file.name + ': ' + msg);
-                    setTimeout(() => card.remove(), 4000);
+                    if (tracker) { tracker.phase = 'done'; recalcGlobalPct(); }
+                    setTimeout(() => card.remove(), 4500);
                 }
                 resolve();
             };
 
             xhr.onerror = () => {
                 if (cancelled) return;
-                bar.classList.add('error');
-                pctEl.className = 'uc-pct error';
-                pctEl.textContent = 'Error';
+                finishTgTimer();
+                barTg.classList.add('error');
+                pctEl.className = 'uc-pct error'; pctEl.textContent = '✕';
+                phaseEl.className = 'uc-phase error'; phaseEl.textContent = 'Error';
                 statusEl.textContent = 'Network error';
                 card.classList.add('error');
-                showToast('❌ Network error uploading "' + file.name + '"');
-                setTimeout(() => card.remove(), 4000);
+                showToast('❌ Network error: "' + file.name + '"');
+                if (tracker) { tracker.phase = 'done'; recalcGlobalPct(); }
+                setTimeout(() => card.remove(), 4500);
                 resolve();
             };
 
             xhr.ontimeout = () => {
                 if (cancelled) return;
-                bar.classList.add('error');
-                pctEl.className = 'uc-pct error';
-                pctEl.textContent = 'Timeout';
+                finishTgTimer();
+                barTg.classList.add('error');
+                pctEl.className = 'uc-pct error'; pctEl.textContent = '✕';
+                phaseEl.className = 'uc-phase error'; phaseEl.textContent = 'Timeout';
                 statusEl.textContent = 'Request timed out';
                 card.classList.add('error');
-                showToast('❌ Timeout uploading "' + file.name + '"');
-                setTimeout(() => card.remove(), 4000);
+                showToast('❌ Timeout: "' + file.name + '"');
+                if (tracker) { tracker.phase = 'done'; recalcGlobalPct(); }
+                setTimeout(() => card.remove(), 4500);
                 resolve();
             };
-
-            // No timeout — large files can take a long time via Telethon MTProto
-            xhr.timeout = 0;
 
             const fd = new FormData();
             fd.append('file', file);
