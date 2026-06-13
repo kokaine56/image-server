@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - PictureMania{% endblock %}
+{% block title %}Dashboard - The Vault{% endblock %}
 
 {% block head %}
 <style>
@@ -216,11 +216,14 @@
     align-items: center;
     justify-content: center;
 }
-#lb-img-wrap img {
-    width: 100%;
+#lb-img-wrap img, #lb-img-wrap video, #lb-img-wrap div {
+    max-width: 100%;
+    max-height: 480px;
     border-radius: 16px;
-    display: block;
     box-shadow: 0 28px 80px -16px rgba(0,0,0,0.9);
+}
+#lb-img-wrap .hidden {
+    display: none !important;
 }
 
 #lb-options {
@@ -519,57 +522,73 @@
         <i class="fa-solid fa-cloud-arrow-up"></i>
     </div>
     <p style="font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;color:#fff;">Drop to Upload</p>
-    <p style="font-size:10px;color:#64748B;margin-top:4px;">PNG, JPG, WEBP, GIF</p>
+    <p style="font-size:10px;color:#64748B;margin-top:4px;">Images, Videos, PDFs, Documents</p>
 </div>
 
 <!-- Hidden file input -->
-<input type="file" id="file-input" class="hidden" accept="image/*" multiple>
+<input type="file" id="file-input" class="hidden" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip" multiple>
 
 <!-- =================== GALLERY =================== -->
 <div class="dash-root" id="gallery-root">
-    {% if images_grouped %}
-        {% for year, months in images_grouped %}
-        <div id="section-year-{{ year }}">
-            <div class="year-label">{{ year }}</div>
+    {% set categories = [
+        ('Images', images_list, 'fa-regular fa-image', 'text-blue-400'),
+        ('Videos', videos_list, 'fa-regular fa-circle-play', 'text-amber-400'),
+        ('Documents', documents_list, 'fa-regular fa-file-pdf', 'text-emerald-400'),
+        ('Files', files_list, 'fa-regular fa-file', 'text-[#64748B]')
+    ] %}
 
-            {% for month_name, month_images in months %}
-            <div id="section-{{ year }}-{{ month_name }}">
-                <div class="month-label">
-                    {{ month_name }}
-                    <span class="month-count">({{ month_images|length }})</span>
+    {% set total_items = images_list|length + videos_list|length + documents_list|length + files_list|length %}
+
+    {% if total_items > 0 %}
+        {% for cat_name, cat_files, cat_icon, cat_color in categories %}
+            {% if cat_files|length > 0 %}
+            <div class="tele-section mb-6">
+                <div class="tele-section-title flex items-center gap-2 mb-3">
+                    <i class="{{ cat_icon }} {{ cat_color }}"></i>
+                    <span>{{ cat_name }}</span>
+                    <span class="text-[10px] text-[#64748B] font-mono font-normal">({{ cat_files|length }})</span>
                 </div>
-                <div class="img-grid">
-                    {% for img in month_images %}
-                    <div class="img-cell" id="cell-{{ img.slug }}"
+                
+                <!-- Horizontal scrollable row -->
+                <div class="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-white/10" style="-webkit-overflow-scrolling: touch;">
+                    {% for img in cat_files %}
+                    <div class="img-cell shrink-0 w-28 h-28 sm:w-36 sm:h-36 rounded-2xl overflow-hidden bg-black/40 border border-white/5 hover:border-blue-500/30 transition-all cursor-pointer relative"
+                         id="cell-{{ img.slug }}"
                          data-slug="{{ img.slug }}"
                          data-raw="{{ domain }}/raw/{{ img.slug }}"
                          data-thumb="/thumb/{{ img.slug }}"
                          data-size="{{ img.file_size }}"
+                         data-mime="{{ img.mime_type or '' }}"
                          onclick="openLightboxFromEl(this)">
-                        <img src="/thumb/{{ img.slug }}" alt="image {{ img.slug }}" loading="lazy">
+                         <img src="/thumb/{{ img.slug }}" alt="{{ img.slug }}" class="w-full h-full object-cover" loading="lazy">
+                        {% if img.mime_type and img.mime_type.startswith("video/") %}
+                        <div class="absolute bottom-1.5 right-1.5 bg-black/70 px-1.5 py-0.5 rounded text-[8px] font-semibold text-white flex items-center gap-0.5">
+                            <i class="fa-solid fa-play text-[6px]"></i>Video
+                        </div>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
             </div>
-            {% endfor %}
-        </div>
+            {% endif %}
         {% endfor %}
     {% else %}
+        <!-- Empty State -->
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:80px 24px;text-align:center;">
             <div style="width:52px;height:52px;border-radius:16px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.12);display:flex;align-items:center;justify-content:center;font-size:20px;color:#60A5FA;">
-                <i class="fa-regular fa-image"></i>
+                <i class="fa-regular fa-folder-open"></i>
             </div>
-            <p style="font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;color:#fff;">No images yet</p>
-            <p style="font-size:11px;color:#64748B;">Upload your first image to get started.</p>
-            <button onclick="triggerFileUpload()" style="margin-top:8px;padding:10px 24px;border-radius:14px;background:rgba(59,130,246,0.14);border:1px solid rgba(59,130,246,0.22);color:#60A5FA;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;">Upload Image</button>
+            <p style="font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;color:#fff;">Your Vault is Empty</p>
+            <p style="font-size:11px;color:#64748B;">Upload your first image, video, document, or file to get started.</p>
+            <button onclick="triggerFileUpload()" style="margin-top:8px;padding:10px 24px;border-radius:14px;background:rgba(59,130,246,0.14);border:1px solid rgba(59,130,246,0.22);color:#60A5FA;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;">Upload Asset</button>
         </div>
     {% endif %}
-    <!-- Bottom padding so FAB doesn't overlap last image -->
+    <!-- Bottom padding so FAB doesn't overlap last content -->
     <div style="height:80px;"></div>
 </div>
 
 <!-- =================== FLOATING ACTION BUTTON =================== -->
-<button id="fab-upload" onclick="triggerFileUpload()" title="Upload Image" aria-label="Upload Image">
+<button id="fab-upload" onclick="triggerFileUpload()" title="Upload Asset" aria-label="Upload Asset">
     <i class="fa-solid fa-plus"></i>
 </button>
 
@@ -585,9 +604,17 @@
             <span id="lb-size"></span>
         </div>
     </div>
-    <!-- Full image -->
+    <!-- Full media -->
     <div id="lb-img-wrap">
-        <img id="lb-full-img" src="" alt="Full image">
+        <img id="lb-full-img" src="" alt="Full image" class="hidden">
+        <video id="lb-full-video" src="" controls class="hidden" style="max-width:100%; max-height:100%; object-fit:contain;"></video>
+        <div id="lb-full-doc" class="hidden flex flex-col items-center justify-center p-6 gap-3 text-center">
+            <div id="lb-doc-icon" class="text-4xl text-blue-400">
+                <i class="fa-solid fa-file"></i>
+            </div>
+            <p id="lb-doc-name" class="font-outfit text-xs font-bold text-white"></p>
+            <p class="text-[9px] text-[#64748B]">This file type cannot be previewed directly in the web app.</p>
+        </div>
     </div>
     <!-- Options below image -->
     <div id="lb-options">
@@ -615,16 +642,15 @@
 <!-- =================== TELEMETRY PANEL =================== -->
 <div id="tele-panel">
     <div id="tele-topbar">
+        <span>Account Telemetry</span>
         <button class="lb-back-btn" onclick="closeTelePanel()">
-            <i class="fa-solid fa-chevron-left" style="font-size:9px;"></i> Back
+            <i class="fa-solid fa-chevron-left" style="font-size:9px;"></i> Close
         </button>
-        <span>Telemetry</span>
     </div>
-
     <div class="tele-body">
-        <!-- Hero -->
+        <!-- Avatar / Identity -->
         <div class="tele-hero">
-            <img class="tele-avatar" src="{{ avatar_url }}" alt="{{ username }}'s avatar">
+            <img src="{{ avatar_url }}" alt="avatar" class="tele-avatar">
             <div class="tele-username">{{ username }}</div>
             <div class="tele-role-badge">{{ user_stats.role }}</div>
         </div>
@@ -648,9 +674,9 @@
             </div>
         </div>
 
-        <!-- Gallery Security -->
+        <!-- Vault Security -->
         <div class="tele-section">
-            <div class="tele-section-title">Gallery Security</div>
+            <div class="tele-section-title">Vault Security</div>
             <div class="tele-grid">
                 {% if user_has_lock %}
                 <div class="tele-card full">
@@ -667,19 +693,19 @@
                     <span class="tele-card-label">Status</span>
                     <span class="tele-card-value small text-[#64748B]">🔓 Lock Inactive</span>
                     <p style="font-size: 10px; color: #475569; margin-top: 6px; line-height: 1.4;">
-                        To secure your gallery, send <code>/lock &lt;password&gt;</code> to the Telegram bot (e.g. <code>/lock 1456</code>).
+                        To secure your vault, send <code>/lock &lt;password&gt;</code> to the Telegram bot (e.g. <code>/lock 1456</code>).
                     </p>
                 </div>
                 {% endif %}
             </div>
         </div>
 
-        <!-- Gallery Stats -->
+        <!-- Vault Statistics -->
         <div class="tele-section">
-            <div class="tele-section-title">Gallery Statistics</div>
+            <div class="tele-section-title">Vault Statistics</div>
             <div class="tele-grid">
                 <div class="tele-card">
-                    <span class="tele-card-label">Total Images</span>
+                    <span class="tele-card-label">Total Assets</span>
                     <span class="tele-card-value">{{ images|length }}</span>
                 </div>
                 <div class="tele-card">
@@ -700,77 +726,72 @@
                         {% endif %}
                     </span>
                 </div>
-            </div>
-        </div>
-
-        <!-- Daily Quota -->
-        <div class="tele-section">
-            <div class="tele-section-title">Daily Quota</div>
-            <div class="tele-grid">
                 <div class="tele-card">
-                    <span class="tele-card-label">Today Uploaded</span>
-                    <span class="tele-card-value">{{ user_stats.daily_uploads }}</span>
-                </div>
-                <div class="tele-card">
-                    <span class="tele-card-label">Remaining</span>
-                    <span class="tele-card-value green">{{ user_stats.remaining }}</span>
-                </div>
-                <div class="tele-card full">
                     <span class="tele-card-label">Daily Limit</span>
-                    <span class="tele-card-value">{{ user_stats.limit }}</span>
-                    {% if user_stats.limit != 'Unlimited' %}
-                    <div class="tele-quota-bar-wrap">
-                        <div class="tele-quota-bar" id="tele-quota-bar" data-pct="{{ (user_stats.daily_uploads / user_stats.limit * 100)|round(0) }}"></div>
-                    </div>
-                    {% if user_stats.countdown_seconds > 0 %}
-                    <div id="tele-countdown-row">
-                        <span>Quota resets in</span>
-                        <span id="quota-countdown" data-countdown="{{ user_stats.countdown_seconds }}" class="font-mono">--:--:--</span>
-                    </div>
-                    {% endif %}
-                    {% else %}
-                    <div style="margin-top:6px;font-size:9px;color:#34D399;font-weight:700;">✓ Unlimited — Administrator Bypass Active</div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Storage breakdown by year -->
-        {% if images_grouped %}
-        <div class="tele-section">
-            <div class="tele-section-title">Activity by Year</div>
-            <div class="tele-grid">
-                {% for year, months in images_grouped %}
-                <div class="tele-card">
-                    <span class="tele-card-label">{{ year }}</span>
                     <span class="tele-card-value">
-                        {% set ns = namespace(total=0) %}
-                        {% for month_name, month_images in months %}{% set ns.total = ns.total + month_images|length %}{% endfor %}
-                        {{ ns.total }} images
+                        {% if user_stats.limit_bytes == 0 %}
+                            Unlimited
+                        {% else %}
+                            1 GB
+                        {% endif %}
                     </span>
                 </div>
-                {% endfor %}
+                <div class="tele-card">
+                    <span class="tele-card-label">Uploaded Today</span>
+                    <span class="tele-card-value">
+                        {% if user_stats.daily_uploads_bytes >= 1073741824 %}
+                            {{ (user_stats.daily_uploads_bytes / 1073741824)|round(2) }} GB
+                        {% elif user_stats.daily_uploads_bytes >= 1048576 %}
+                            {{ (user_stats.daily_uploads_bytes / 1048576)|round(2) }} MB
+                        {% elif user_stats.daily_uploads_bytes >= 1024 %}
+                            {{ (user_stats.daily_uploads_bytes / 1024)|round(1) }} KB
+                        {% else %}
+                            {{ user_stats.daily_uploads_bytes }} Bytes
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="tele-card">
+                    <span class="tele-card-label">Remaining Cap</span>
+                    <span class="tele-card-value green">
+                        {% if user_stats.limit_bytes == 0 %}
+                            Unlimited
+                        {% else %}
+                            {% set remaining_bytes = user_stats.limit_bytes - user_stats.daily_uploads_bytes %}
+                            {% if remaining_bytes < 0 %}{% set remaining_bytes = 0 %}{% endif %}
+                            {% if remaining_bytes >= 1073741824 %}
+                                {{ (remaining_bytes / 1073741824)|round(2) }} GB
+                            {% elif remaining_bytes >= 1048576 %}
+                                {{ (remaining_bytes / 1048576)|round(2) }} MB
+                            {% elif remaining_bytes >= 1024 %}
+                                {{ (remaining_bytes / 1024)|round(1) }} KB
+                            {% else %}
+                                {{ remaining_bytes }} Bytes
+                            {% endif %}
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="tele-card">
+                    <span class="tele-card-label">Quota Countdown</span>
+                    <span class="tele-card-value">
+                        {% if user_stats.limit_bytes > 0 %}
+                            <div class="tele-quota-bar-wrap">
+                                <div class="tele-quota-bar" id="tele-quota-bar" data-pct="{{ (user_stats.daily_uploads_bytes / user_stats.limit_bytes * 100)|round(0) }}"></div>
+                            </div>
+                            {% if user_stats.countdown_seconds > 0 %}
+                            <div id="tele-countdown-row">
+                                <span>Reset in</span>
+                                <span id="quota-countdown" data-countdown="{{ user_stats.countdown_seconds }}" class="font-mono">--:--:--</span>
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-[11px] text-[#64748B] font-semibold">No Quota Constraint</span>
+                        {% endif %}
+                    </span>
+                </div>
             </div>
         </div>
-        {% endif %}
     </div>
 </div>
-
-<!-- =================== FLOATING UPLOAD STATUS =================== -->
-<div id="floating-upload-status">
-    <div style="width:18px;height:18px;border-radius:50%;border:2px solid #3B82F6;border-top-color:transparent;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>
-    <div style="min-width:0;">
-        <p id="upload-status-title" style="font-size:11px;font-weight:700;color:#fff;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Uploading...</p>
-        <p id="upload-status-text" style="font-size:9px;color:#94A3B8;margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Initializing...</p>
-    </div>
-</div>
-
-<!-- =================== TOAST =================== -->
-<div id="toast">Copied!</div>
-
-<style>
-@keyframes spin { to { transform: rotate(360deg); } }
-</style>
 {% endblock %}
 
 {% block scripts %}
@@ -779,7 +800,7 @@
     // PERMANENT PASSCODE LOCK CHECK
     // ============================================================
     (function() {
-        const userHasLock = {% if user_has_lock %}true{% else %}false{% endif %};
+        const userHasLock = "{{ 'true' if user_has_lock else 'false' }}" === "true";
         if (userHasLock) {
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('unlocked') === 'true') {
@@ -851,14 +872,44 @@
     let lbCurrentRaw  = '';
 
     function openLightboxFromEl(el) {
-        openLightbox(el.dataset.slug, el.dataset.raw, el.dataset.thumb, parseInt(el.dataset.size, 10));
+        openLightbox(el.dataset.slug, el.dataset.raw, el.dataset.thumb, parseInt(el.dataset.size, 10), el.dataset.mime || '');
     }
 
-    function openLightbox(slug, rawUrl, thumbUrl, fileSize) {
+    function openLightbox(slug, rawUrl, thumbUrl, fileSize, mimeType) {
         lbCurrentSlug = slug;
         lbCurrentRaw  = rawUrl;
 
-        document.getElementById('lb-full-img').src = rawUrl;
+        // Hide all views by default
+        const imgEl = document.getElementById('lb-full-img');
+        const vidEl = document.getElementById('lb-full-video');
+        const docEl = document.getElementById('lb-full-doc');
+        imgEl.classList.add('hidden');
+        vidEl.classList.add('hidden');
+        docEl.classList.add('hidden');
+        
+        // Stop any running video
+        vidEl.src = '';
+        vidEl.load();
+
+        const mime = (mimeType || '').toLowerCase();
+        if (mime.startsWith('image/')) {
+            imgEl.src = rawUrl;
+            imgEl.classList.remove('hidden');
+        } else if (mime.startsWith('video/')) {
+            vidEl.src = rawUrl;
+            vidEl.classList.remove('hidden');
+            vidEl.load();
+        } else {
+            const iconEl = document.getElementById('lb-doc-icon');
+            if (mime === 'application/pdf' || mime.includes('document') || mime.includes('word') || mime.includes('excel') || mime.includes('powerpoint') || mime.startsWith('text/')) {
+                iconEl.innerHTML = '<i class="fa-solid fa-file-pdf text-emerald-400"></i>';
+            } else {
+                iconEl.innerHTML = '<i class="fa-solid fa-file text-[#64748B]"></i>';
+            }
+            document.getElementById('lb-doc-name').textContent = slug;
+            docEl.classList.remove('hidden');
+        }
+
         document.getElementById('lb-slug').textContent = slug;
         document.getElementById('lb-size').textContent =
             fileSize >= 1048576 ? (fileSize/1048576).toFixed(2) + ' MB' :
@@ -876,6 +927,9 @@
     function closeLightbox() {
         document.getElementById('lightbox').classList.remove('open');
         document.getElementById('lb-full-img').src = '';
+        const vidEl = document.getElementById('lb-full-video');
+        vidEl.src = '';
+        vidEl.load();
         document.body.style.overflow = '';
     }
 
@@ -899,7 +953,8 @@
             nextCell.dataset.slug,
             nextCell.dataset.raw,
             nextCell.dataset.thumb,
-            parseInt(nextCell.dataset.size, 10)
+            parseInt(nextCell.dataset.size, 10),
+            nextCell.dataset.mime || ''
         );
     }
 
@@ -923,19 +978,6 @@
         }, { passive: true });
     }
 
-    function handleSwipe() {
-        const diffX = touchendX - touchstartX;
-        const diffY = touchendY - touchstartY;
-        
-        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
-            if (diffX < 0) {
-                navigateLightbox(1);  // Swipe left -> next
-            } else {
-                navigateLightbox(-1); // Swipe right -> prev
-            }
-        }
-    }
-
     // Keyboard support
     document.addEventListener('keydown', e => {
         if (!document.getElementById('lightbox').classList.contains('open')) return;
@@ -951,12 +993,12 @@
     function lbCopyDirect() { copyText(lbCurrentRaw, 'Direct URL copied!'); }
 
     async function lbDelete() {
-        if (!confirm('Remove this image from your dashboard?\n(File stays on Telegram servers.)')) return;
+        if (!confirm('Remove this asset from your dashboard?\n(File stays on Telegram servers.)')) return;
         try {
             const r = await fetch('/api/user/delete/' + lbCurrentSlug, { method: 'POST' });
             const d = await r.json();
             if (r.ok && d.success) {
-                showToast('Image removed.');
+                showToast('Asset removed.');
                 closeLightbox();
                 const cell = document.getElementById('cell-' + lbCurrentSlug);
                 if (cell) {
@@ -966,7 +1008,7 @@
                     setTimeout(() => { cell.remove(); }, 300);
                 }
             } else {
-                alert('Error: ' + (d.detail || 'Could not remove image.'));
+                alert('Error: ' + (d.detail || 'Could not remove asset.'));
             }
         } catch (e) { alert('Network error: ' + e); }
     }
@@ -974,7 +1016,20 @@
     function toggleLbEmbed() {
         const wrap = document.getElementById('lb-embed-wrap');
         if (wrap.classList.contains('open')) { wrap.classList.remove('open'); return; }
-        const embed = `<img src="${lbCurrentRaw}" alt="Hosted image" style="max-width:100%">`;
+        
+        // Find current cell to get mime type
+        const cell = document.getElementById('cell-' + lbCurrentSlug);
+        const mime = (cell ? cell.dataset.mime : '').toLowerCase();
+        
+        let embed = '';
+        if (mime.startsWith('image/')) {
+            embed = `<img src="${lbCurrentRaw}" alt="The Vault Asset" style="max-width:100%">`;
+        } else if (mime.startsWith('video/')) {
+            embed = `<video src="${lbCurrentRaw}" controls style="max-width:100%"></video>`;
+        } else {
+            embed = `<a href="${lbCurrentRaw}" target="_blank">Download Asset</a>`;
+        }
+        
         document.getElementById('lb-embed-code').textContent = embed;
         wrap.classList.add('open');
     }
@@ -1021,9 +1076,9 @@
     });
 
     async function handleUploads(fileList) {
-        let files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+        let files = Array.from(fileList);
         if (!files.length) return;
-        if (files.length > 10) { alert('Max 10 images at a time.'); files = files.slice(0, 10); }
+        if (files.length > 10) { alert('Max 10 assets at a time.'); files = files.slice(0, 10); }
 
         statusBox.classList.add('visible');
 
@@ -1041,7 +1096,7 @@
         }
 
         statusBox.classList.remove('visible');
-        showToast('Images uploaded!');
+        showToast('Assets uploaded!');
         setTimeout(() => location.reload(), 900);
     }
 

@@ -227,52 +227,40 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
         stmt_storage = select(func.sum(Image.file_size)).where(Image.uploaded_by == user_id)
         total_storage_bytes = (await db.execute(stmt_storage)).scalar() or 0
         
-        # Query daily uploads count reset at 12:00 AM IST
+        # Query daily uploads size reset at 12:00 AM IST
         IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         now_ist = datetime.datetime.now(IST)
         today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
         today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
 
-        stmt_daily = select(func.count(Image.id)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
-        daily_count = (await db.execute(stmt_daily)).scalar() or 0
+        stmt_daily = select(func.sum(Image.file_size)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
+        daily_size = (await db.execute(stmt_daily)).scalar() or 0
         
         # Quota countdown resets at 12:00 AM IST of the next day
         next_midnight_ist = today_midnight_ist + datetime.timedelta(days=1)
         countdown_seconds = max(0, int((next_midnight_ist - now_ist).total_seconds()))
             
-        # Group images by year → month
-        MONTH_NAMES = [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ]
-        images_by_year_month: dict[int, dict[int, list]] = {}
-        for img in images:
-            year = img.created_at.year
-            month = img.created_at.month
-            if year not in images_by_year_month:
-                images_by_year_month[year] = {}
-            if month not in images_by_year_month[year]:
-                images_by_year_month[year][month] = []
-            images_by_year_month[year][month].append(img)
-
-        # Sort years descending, months descending within each year
-        sorted_years = sorted(images_by_year_month.keys(), reverse=True)
-        images_grouped = [
-            (
-                year,
-                [
-                    (MONTH_NAMES[month - 1], images_by_year_month[year][month])
-                    for month in sorted(images_by_year_month[year].keys(), reverse=True)
-                ]
-            )
-            for year in sorted_years
-        ]
+        # Classify files by type
+        images_list = []
+        videos_list = []
+        documents_list = []
+        files_list = []
         
+        for img in images:
+            mime = (img.mime_type or "").lower()
+            if mime.startswith("image/"):
+                images_list.append(img)
+            elif mime.startswith("video/"):
+                videos_list.append(img)
+            elif mime == "application/pdf" or "document" in mime or "word" in mime or "excel" in mime or "powerpoint" in mime or mime.startswith("text/") or mime in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
+                documents_list.append(img)
+            else:
+                files_list.append(img)
+                
         user_stats = {
             "lifetime_uploads": lifetime_uploads,
-            "daily_uploads": daily_count,
-            "limit": "Unlimited" if is_admin else USER_LIMIT,
-            "remaining": "Unlimited" if is_admin else max(0, USER_LIMIT - daily_count),
+            "daily_uploads_bytes": daily_size,
+            "limit_bytes": 0 if is_admin else (1024 * 1024 * 1024), # 1 GB
             "role": "🛠️ Administrator" if is_admin else "👤 Standard User",
             "total_storage_bytes": total_storage_bytes,
             "countdown_seconds": countdown_seconds
@@ -282,7 +270,10 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
             request=request,
             name="dashboard.html",
             context={
-                "images_grouped": images_grouped,
+                "images_list": images_list,
+                "videos_list": videos_list,
+                "documents_list": documents_list,
+                "files_list": files_list,
                 "images": images,
                 "user_stats": user_stats,
                 "username": request.session.get("username", "User"),
@@ -682,6 +673,17 @@ async def thumbnail_image_endpoint(slug: str, request: Request, db: AsyncSession
             }
         )
         
+    # Return placeholder SVG thumbnails for non-image types
+    mime = (image.mime_type or "").lower()
+    if not mime.startswith("image/"):
+        if mime.startswith("video/"):
+            svg_content = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="300" height="300"><rect width="24" height="24" rx="4" fill="#0A0F1D" stroke="#3B82F6" stroke-width="1"/><path d="M10 8v8l6-4-6-4z" fill="#3B82F6"/></svg>'
+        elif mime == "application/pdf" or "document" in mime or "word" in mime or "excel" in mime or "powerpoint" in mime or mime.startswith("text/") or mime in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
+            svg_content = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="300" height="300"><rect width="24" height="24" rx="4" fill="#0A0F1D" stroke="#10B981" stroke-width="1"/><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" fill="#10B981"/></svg>'
+        else:
+            svg_content = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="300" height="300"><rect width="24" height="24" rx="4" fill="#0A0F1D" stroke="#64748B" stroke-width="1"/><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm-1 5V3.5L18.5 9H13z" fill="#64748B"/></svg>'
+        return Response(content=svg_content.encode("utf-8"), media_type="image/svg+xml")
+
     try:
         # Fetch original from Telegram
         tg_file = await bot.get_file(image.file_id)
@@ -857,14 +859,14 @@ async def api_upload_image(
         today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
         today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         
-        stmt = select(func.count(Image.id)).where(Image.uploaded_by == session_user_id, Image.created_at >= today_midnight_utc_naive)
-        daily_count = (await db.execute(stmt)).scalar() or 0
-        if daily_count >= USER_LIMIT:
-            raise HTTPException(status_code=429, detail=f"Daily limit of {USER_LIMIT} uploads reached.")
+        stmt = select(func.sum(Image.file_size)).where(Image.uploaded_by == session_user_id, Image.created_at >= today_midnight_utc_naive)
+        daily_size = (await db.execute(stmt)).scalar() or 0
+        if daily_size >= 1024 * 1024 * 1024:
+            raise HTTPException(status_code=429, detail="Daily upload storage limit of 1 GB has been reached.")
         
     # 3. File Verification
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Only image files are permitted.")
+    if not file.content_type:
+        file.content_type = "application/octet-stream"
         
     try:
         file_bytes = await file.read()
@@ -876,14 +878,32 @@ async def api_upload_image(
             limit_mb = max_allowed_size // (1024 * 1024)
             raise ValueError(f"File size exceeds the {limit_mb}MB limit.")
             
-        # Validate structure with Pillow
-        optimized_bytes = image_service.validate_and_optimize(file_bytes)
-        file_size = len(optimized_bytes)
+        # Enforce daily limit check with the file size included
+        if session_user_id and not is_admin_session:
+            IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+            now_ist = datetime.datetime.now(IST)
+            today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+            
+            stmt = select(func.sum(Image.file_size)).where(Image.uploaded_by == session_user_id, Image.created_at >= today_midnight_utc_naive)
+            daily_size = (await db.execute(stmt)).scalar() or 0
+            if daily_size + len(file_bytes) > 1024 * 1024 * 1024:
+                raise ValueError("This upload would exceed your daily storage limit of 1 GB.")
+            
+        # Validate structure with Pillow if it is an image
+        if file.content_type.startswith("image/"):
+            optimized_bytes = image_service.validate_and_optimize(file_bytes)
+            file_size = len(optimized_bytes)
+        else:
+            optimized_bytes = file_bytes
+            file_size = len(file_bytes)
     except ValueError as val_err:
-        raise HTTPException(status_code=400, detail=str(val_err) or "Invalid image structure or corrupt content.")
+        raise HTTPException(status_code=400, detail=str(val_err) or "Invalid file format or structure.")
         
-    # 4. Content Moderation
-    is_nsfw = moderation_service.check_nsfw(optimized_bytes)
+    # 4. Content Moderation (Images only)
+    is_nsfw = False
+    if file.content_type.startswith("image/"):
+        is_nsfw = moderation_service.check_nsfw(optimized_bytes)
     
     # 5. Upload to storage channel
     try:

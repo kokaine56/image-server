@@ -9,7 +9,7 @@ from aiogram.filters import Command
 from sqlalchemy import select, func, delete
 from aiogram.exceptions import TelegramBadRequest
 
-from app.config import STORAGE_CHANNEL_ID, DOMAIN, USER_LIMIT, ADMIN_USER_IDS, SECRET_KEY
+from app.config import STORAGE_CHANNEL_ID, DOMAIN, ADMIN_USER_IDS, SECRET_KEY
 from app.database import async_session
 from app.models import Image, BannedUser, UserLock
 from app.services.moderation_service import moderation_service
@@ -33,6 +33,15 @@ def get_moderation_keyboard(user_id: int) -> InlineKeyboardMarkup:
         ]
     ])
 
+def format_size(size_bytes: int) -> str:
+    if size_bytes >= 1073741824:
+        return f"{size_bytes / 1073741824:.2f} GB".rstrip('0').rstrip('.')
+    elif size_bytes >= 1048576:
+        return f"{size_bytes / 1048576:.2f} MB".rstrip('0').rstrip('.')
+    elif size_bytes >= 1024:
+        return f"{size_bytes / 1024:.1f} KB".rstrip('0').rstrip('.')
+    return f"{size_bytes} Bytes"
+
 async def generate_unique_slug(db) -> str:
     while True:
         # Generate 6 character alphanumeric slug
@@ -47,15 +56,15 @@ async def is_user_banned(db, user_id: int) -> bool:
     res = await db.execute(stmt)
     return res.scalar() is not None
 
-async def check_user_limit(db, user_id: int) -> bool:
+async def check_user_limit(db, user_id: int, incoming_size: int = 0) -> bool:
     IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
     now_ist = datetime.datetime.now(IST)
     today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
     today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     
-    stmt = select(func.count(Image.id)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
-    count = (await db.execute(stmt)).scalar() or 0
-    return count < USER_LIMIT
+    stmt = select(func.sum(Image.file_size)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
+    today_size = (await db.execute(stmt)).scalar() or 0
+    return (today_size + incoming_size) <= (1024 * 1024 * 1024)
 
 async def check_message_exists(chat_id: int | str, message_id: int, slug: str) -> bool:
     cache_key = f"msg_exists:{slug}"
@@ -100,23 +109,21 @@ async def process_media_group(media_group_id: str):
     chat_id = first_msg.chat.id
     user_id = first_msg.from_user.id
     
-    # Filter for image attachments
+    # Filter for attachments
     valid_media_messages = []
     for msg in messages:
-        if msg.photo:
-            valid_media_messages.append(msg)
-        elif msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
+        if msg.photo or msg.video or msg.audio or msg.document:
             valid_media_messages.append(msg)
             
     if not valid_media_messages:
         return
         
-    # Enforce media group cap (max 10 images at a time)
+    # Enforce media group cap (max 10 items at a time)
     if len(valid_media_messages) > 10:
-        await first_msg.reply("⚠️ Maximum 10 images can be uploaded in an album at a time. Only the first 10 will be processed.")
+        await first_msg.reply("⚠️ Maximum 10 assets can be uploaded in an album at a time. Only the first 10 will be processed.")
         valid_media_messages = valid_media_messages[:10]
         
-    status_msg = await first_msg.reply(f"⏳ <i>Processing album of {len(valid_media_messages)} images...</i>")
+    status_msg = await first_msg.reply(f"⏳ <i>Processing album of {len(valid_media_messages)} items...</i>")
     
     async with async_session() as db:
         # 1. Ban Check
@@ -129,24 +136,28 @@ async def process_media_group(media_group_id: str):
 
         # 3. Accumulated Limit Check (bypassed for admins)
         if not is_admin:
-            IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-            now_ist = datetime.datetime.now(IST)
-            today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-            
-            stmt = select(func.count(Image.id)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
-            count = (await db.execute(stmt)).scalar() or 0
-            if count + len(valid_media_messages) > USER_LIMIT:
-                await status_msg.edit_text(f"❌ Uploading this album would exceed your daily limit of {USER_LIMIT} images. Remaining capacity: {max(0, USER_LIMIT - count)}.")
+            total_incoming_size = 0
+            for msg in valid_media_messages:
+                if msg.photo:
+                    total_incoming_size += msg.photo[-1].file_size
+                elif msg.video:
+                    total_incoming_size += msg.video.file_size
+                elif msg.audio:
+                    total_incoming_size += msg.audio.file_size
+                elif msg.document:
+                    total_incoming_size += msg.document.file_size
+                    
+            if not await check_user_limit(db, user_id, total_incoming_size):
+                await status_msg.edit_text(f"❌ Uploading this album would exceed your daily storage limit of 1 GB.")
                 return
 
         results = []
         for idx, msg in enumerate(valid_media_messages, 1):
             file_id = None
             file_unique_id = None
-            mime_type = "image/jpeg"
+            mime_type = "application/octet-stream"
             file_size = 0
-            file_name = f"image_{idx}.jpg"
+            file_name = f"file_{idx}"
             
             if msg.photo:
                 photo = msg.photo[-1]
@@ -154,13 +165,28 @@ async def process_media_group(media_group_id: str):
                 file_unique_id = photo.file_unique_id
                 file_size = photo.file_size
                 mime_type = "image/jpeg"
+                file_name = f"image_{idx}.jpg"
+            elif msg.video:
+                vid = msg.video
+                file_id = vid.file_id
+                file_unique_id = vid.file_unique_id
+                file_size = vid.file_size
+                mime_type = vid.mime_type or "video/mp4"
+                file_name = vid.file_name or f"video_{idx}.mp4"
+            elif msg.audio:
+                aud = msg.audio
+                file_id = aud.file_id
+                file_unique_id = aud.file_unique_id
+                file_size = aud.file_size
+                mime_type = aud.mime_type or "audio/mpeg"
+                file_name = aud.file_name or f"audio_{idx}.mp3"
             elif msg.document:
                 doc = msg.document
                 file_id = doc.file_id
                 file_unique_id = doc.file_unique_id
                 file_size = doc.file_size
-                mime_type = doc.mime_type
-                file_name = doc.file_name or f"image_{idx}.jpg"
+                mime_type = doc.mime_type or "application/octet-stream"
+                file_name = doc.file_name or f"file_{idx}"
                 
             # Skip if file ID is not parsed
             if not file_id:
@@ -197,11 +223,19 @@ async def process_media_group(media_group_id: str):
                 buffer = io.BytesIO()
                 await bot.download_file(tg_file.file_path, destination=buffer)
                 file_bytes = buffer.getvalue()
-                    
-                optimized_bytes = image_service.validate_and_optimize(file_bytes)
-                file_size = len(optimized_bytes)
                 
-                is_nsfw = moderation_service.check_nsfw(optimized_bytes)
+                is_nsfw = False
+                if mime_type.startswith("image/"):
+                    try:
+                        optimized_bytes = image_service.validate_and_optimize(file_bytes)
+                        file_size = len(optimized_bytes)
+                        is_nsfw = moderation_service.check_nsfw(optimized_bytes)
+                    except Exception:
+                        optimized_bytes = file_bytes
+                        file_size = len(file_bytes)
+                else:
+                    optimized_bytes = file_bytes
+                    file_size = len(file_bytes)
                 
                 stored_file_id = file_id
                 uploader_name = first_msg.from_user.username or first_msg.from_user.first_name
@@ -277,13 +311,13 @@ async def start_command(message: Message):
         logger.error(f"Failed to set WebApp menu button in start: {e}")
         
     welcome_text = (
-        "📸 <b>Welcome to the Premium Image Hosting Bot!</b>\n\n"
-        "Send me any image (as a photo or document), and I will host it securely on our Telegram-backed database storage!\n\n"
+        "🔒 <b>Welcome to The Vault!</b>\n\n"
+        "Send me any image, video, document, or file, and I will host it securely on our Telegram-backed database storage!\n\n"
         "<b>Commands:</b>\n"
-        "/help - How to use the bot\n"
-        "/stats - Quick bot storage metrics\n"
+        "/help - How to use the vault\n"
+        "/stats - Quick vault storage metrics\n"
         "/myuploads - View your hosted uploads\n"
-        "/lock &lt;PIN&gt; - Lock your web gallery with a 4-digit PIN"
+        "/lock &lt;PIN&gt; - Secure your vault with a 4-digit PIN"
     )
     await message.reply(welcome_text)
 
@@ -298,16 +332,16 @@ async def help_command(message: Message):
         logger.error(f"Failed to set WebApp menu button in help: {e}")
         
     help_text = (
-        "📖 <b>How to use the Image Hosting Bot:</b>\n\n"
-        "1. Send any photo or image file directly to the bot.\n"
-        "2. The bot will validate the file type (JPEG, PNG, WEBP, GIF supported).\n"
-        "3. It checks the content for safety and stores it in our secure channel storage.\n"
-        "4. You can send multiple images at a time (albums up to 10 files).\n"
-        "5. You will receive a direct preview link, a raw image URL, and a deletion token.\n\n"
+        "📖 <b>How to use The Vault:</b>\n\n"
+        "1. Send any image, video, or document directly to the bot.\n"
+        "2. The bot will validate the file size and type.\n"
+        "3. It stores the asset in our secure channel storage.\n"
+        "4. You can send multiple items at a time (albums up to 10 files).\n"
+        "5. You will receive a secure view link, a raw direct link, and a deletion token.\n\n"
         "<b>Security Options:</b>\n"
-        "• <code>/lock &lt;4-digit PIN&gt;</code> - Secure your web gallery dashboard with a numeric 4-digit PIN.\n\n"
+        "• <code>/lock &lt;4-digit PIN&gt;</code> - Secure your web gallery vault dashboard with a numeric 4-digit PIN.\n\n"
         "<b>Upload Limits:</b>\n"
-        f"- Up to {USER_LIMIT} uploads per day (resets daily at 12:00 AM IST)."
+        "- Up to 1 GB daily upload capacity (resets daily at 12:00 AM IST)."
     )
     await message.reply(help_text)
 
@@ -321,39 +355,38 @@ async def stats_command(message: Message):
         stmt_lifetime = select(func.count(Image.id)).where(Image.uploaded_by == user_id)
         lifetime_uploads = (await db.execute(stmt_lifetime)).scalar() or 0
         
-        # Daily Uploads (since 12:00 AM IST)
+        # Daily Uploads size (since 12:00 AM IST)
         IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         now_ist = datetime.datetime.now(IST)
         today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
         today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         
-        stmt_daily = select(func.count(Image.id)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
-        daily_count = (await db.execute(stmt_daily)).scalar() or 0
+        stmt_daily = select(func.sum(Image.file_size)).where(Image.uploaded_by == user_id, Image.created_at >= today_midnight_utc_naive)
+        daily_size = (await db.execute(stmt_daily)).scalar() or 0
         
         # Disk Used query
         stmt_storage = select(func.sum(Image.file_size)).where(Image.uploaded_by == user_id)
         total_storage_bytes = (await db.execute(stmt_storage)).scalar() or 0
         
-    limit_text = "Unlimited" if is_admin else str(USER_LIMIT)
-    remaining_text = "Unlimited" if is_admin else str(max(0, USER_LIMIT - daily_count))
-    
-    # Format Disk Used
-    if total_storage_bytes >= 1073741824:
-        disk_used_text = f"{total_storage_bytes / 1073741824:.2f} GB".rstrip('0').rstrip('.')
-    elif total_storage_bytes >= 1048576:
-        disk_used_text = f"{total_storage_bytes / 1048576:.2f} MB".rstrip('0').rstrip('.')
-    elif total_storage_bytes >= 1024:
-        disk_used_text = f"{total_storage_bytes / 1024:.1f} KB".rstrip('0').rstrip('.')
+    # Format Daily size
+    if is_admin:
+        uploaded_today_text = f"{format_size(daily_size)} / Unlimited"
+        remaining_text = "Unlimited"
     else:
-        disk_used_text = f"{total_storage_bytes} Bytes"
+        limit_bytes = 1024 * 1024 * 1024
+        uploaded_today_text = f"{format_size(daily_size)} / 1 GB"
+        remaining_bytes = max(0, limit_bytes - daily_size)
+        remaining_text = format_size(remaining_bytes)
+        
+    disk_used_text = format_size(total_storage_bytes)
         
     stats_text = (
         "<b>Your Account Statistics</b>\n\n"
         f"• <b>User ID:</b> <code>{user_id}</code>\n"
         f"• <b>Lifetime Uploads:</b> {lifetime_uploads} images\n\n"
         "- <b>Daily Usage (Resets at 12:00 AM IST)</b>\n"
-        f"• <b>Uploaded Today:</b> {daily_count} / {limit_text} images\n"
-        f"• <b>Remaining Capacity:</b> {remaining_text} images\n"
+        f"• <b>Uploaded Today:</b> {uploaded_today_text}\n"
+        f"• <b>Remaining Capacity:</b> {remaining_text}\n"
         f"• <b>Disk Used:</b> {disk_used_text}"
     )
     await message.reply(stats_text)
@@ -367,12 +400,12 @@ async def myuploads_command(message: Message):
         images = res.scalars().all()
 
     if not images:
-        await message.reply("📂 You haven't uploaded any images yet!")
+        await message.reply("📂 You haven't uploaded any assets yet!")
         return
 
     uploads_text = "📂 <b>Your Last 10 Uploads:</b>\n\n"
     for idx, img in enumerate(images, 1):
-        uploads_text += f"{idx}. <code>{img.slug}</code> - <a href='{DOMAIN}/i/{img.slug}'>View Image</a> ({img.views} views)\n"
+        uploads_text += f"{idx}. <code>{img.slug}</code> - <a href='{DOMAIN}/i/{img.slug}'>View Asset</a> ({img.views} views)\n"
 
     await message.reply(uploads_text, disable_web_page_preview=True)
 
@@ -497,7 +530,7 @@ async def protection_command(message: Message):
 async def lock_command(message: Message):
     parts = message.text.strip().split(maxsplit=1)
     if len(parts) < 2:
-        await message.reply("🔑 <b>How to lock your gallery:</b>\nUse <code>/lock &lt;4-digit PIN&gt;</code> to set a PIN (e.g., <code>/lock 1456</code>).")
+        await message.reply("🔑 <b>How to lock your vault:</b>\nUse <code>/lock &lt;4-digit PIN&gt;</code> to set a PIN (e.g., <code>/lock 1456</code>).")
         return
         
     password = parts[1].strip()
@@ -520,7 +553,7 @@ async def lock_command(message: Message):
             
         await db.commit()
         
-    await message.reply(f"🔒 <b>Gallery locked successfully!</b>\nYour PIN has been set. You will be asked for this PIN when opening the gallery web page.")
+    await message.reply(f"🔒 <b>Vault locked successfully!</b>\nYour PIN has been set. You will be asked for this PIN when opening the vault web page.")
 
 @router.chat_join_request()
 async def handle_chat_join_request(event: ChatJoinRequest):
@@ -560,7 +593,7 @@ async def handle_chat_member_updated(event: ChatMemberUpdated):
             except Exception as e:
                 logger.error(f"Failed to kick user {user_id} from chat {event.chat.id}: {e}")
 
-@router.message(F.photo | F.document)
+@router.message(F.photo | F.document | F.video | F.audio)
 async def media_upload_handler(message: Message):
     user_id = message.from_user.id
     
@@ -573,7 +606,7 @@ async def media_upload_handler(message: Message):
             media_group_cache[message.media_group_id].append(message)
         return
         
-    # 2. Single image processing flow
+    # 2. Single asset processing flow
     async with async_session() as db:
         # Ban Check
         if await is_user_banned(db, user_id):
@@ -582,16 +615,13 @@ async def media_upload_handler(message: Message):
 
         # Limit Check (bypassed for Admins)
         is_admin = user_id in ADMIN_USER_IDS
-        if not is_admin and not await check_user_limit(db, user_id):
-            await message.reply("❌ Daily upload limit reached. Try again in 24 hours.")
-            return
 
         # Identify Media & Extract Info
         file_id = None
         file_unique_id = None
-        mime_type = "image/jpeg"
+        mime_type = "application/octet-stream"
         file_size = 0
-        file_name = "image.jpg"
+        file_name = "file"
 
         if message.photo:
             photo = message.photo[-1]
@@ -599,20 +629,36 @@ async def media_upload_handler(message: Message):
             file_unique_id = photo.file_unique_id
             file_size = photo.file_size
             mime_type = "image/jpeg"
+            file_name = "image.jpg"
+        elif message.video:
+            vid = message.video
+            file_id = vid.file_id
+            file_unique_id = vid.file_unique_id
+            file_size = vid.file_size
+            mime_type = vid.mime_type or "video/mp4"
+            file_name = vid.file_name or "video.mp4"
+        elif message.audio:
+            aud = message.audio
+            file_id = aud.file_id
+            file_unique_id = aud.file_unique_id
+            file_size = aud.file_size
+            mime_type = aud.mime_type or "audio/mpeg"
+            file_name = aud.file_name or "audio.mp3"
         elif message.document:
             doc = message.document
-            # Validate mime type
-            if not doc.mime_type or not doc.mime_type.startswith("image/"):
-                await message.reply("❌ Only image files (JPEG, PNG, WEBP, GIF) are allowed!")
-                return
             file_id = doc.file_id
             file_unique_id = doc.file_unique_id
             file_size = doc.file_size
-            mime_type = doc.mime_type
-            file_name = doc.file_name or "image.jpg"
+            mime_type = doc.mime_type or "application/octet-stream"
+            file_name = doc.file_name or "file"
 
         if not file_id:
             await message.reply("❌ Failed to process upload attachment.")
+            return
+
+        # Limit Check (bypassed for Admins) - 1GB daily upload storage limit
+        if not is_admin and not await check_user_limit(db, user_id, file_size):
+            await message.reply("❌ Daily upload limit reached. You can upload up to 1 GB of files per day.")
             return
 
         # Enforce size limit (20MB for admins, 10MB for others)
@@ -621,7 +667,7 @@ async def media_upload_handler(message: Message):
             await message.reply(f"❌ File size exceeds the limit of {max_size // (1024 * 1024)}MB.")
             return
 
-        # Check if the image already exists in the database
+        # Check if the asset already exists in the database
         stmt = select(Image).where(Image.file_unique_id == file_unique_id)
         res = await db.execute(stmt)
         existing_image = res.scalar()
@@ -633,7 +679,7 @@ async def media_upload_handler(message: Message):
                 delete_url = f"{DOMAIN}/delete/{existing_image.slug}/{existing_image.delete_token}"
 
                 response_text = (
-                    "✅ <b>Image already hosted!</b>\n\n"
+                    "✅ <b>Asset already hosted!</b>\n\n"
                     f"👁️ <b>View:</b> {view_url}\n"
                     f"🔗 <b>Direct link:</b> {raw_url}\n"
                     f"🗑️ <b>Delete link:</b> {delete_url}\n"
@@ -647,7 +693,7 @@ async def media_upload_handler(message: Message):
                 await cache_service.delete(f"image_cache:{existing_image.slug}:full")
                 await cache_service.delete(f"image_cache:{existing_image.slug}:thumb")
 
-        status_msg = await message.reply("⏳ <i>Processing image and database entry...</i>")
+        status_msg = await message.reply("⏳ <i>Processing asset and database entry...</i>")
 
         try:
             # Download and validate content
@@ -659,15 +705,18 @@ async def media_upload_handler(message: Message):
             await bot.download_file(tg_file.file_path, destination=buffer)
             file_bytes = buffer.getvalue()
 
-            try:
-                optimized_bytes = image_service.validate_and_optimize(file_bytes)
-                file_size = len(optimized_bytes)
-            except ValueError:
-                await status_msg.edit_text("❌ Upload validation failed. File is not a valid or supported image format.")
-                return
-
-            # Content Moderation / NSFW Check
-            is_nsfw = moderation_service.check_nsfw(optimized_bytes)
+            is_nsfw = False
+            if mime_type.startswith("image/"):
+                try:
+                    optimized_bytes = image_service.validate_and_optimize(file_bytes)
+                    file_size = len(optimized_bytes)
+                    is_nsfw = moderation_service.check_nsfw(optimized_bytes)
+                except ValueError:
+                    await status_msg.edit_text("❌ Upload validation failed. File is not a valid or supported image format.")
+                    return
+            else:
+                optimized_bytes = file_bytes
+                file_size = len(file_bytes)
 
             # Copy message or fallback
             stored_file_id = file_id
@@ -729,7 +778,7 @@ async def media_upload_handler(message: Message):
             delete_url = f"{DOMAIN}/delete/{slug}/{delete_token}"
 
             response_text = (
-                "✅ <b>Image uploaded successfully!</b>\n\n"
+                "✅ <b>Asset uploaded successfully!</b>\n\n"
                 f"👁️ <b>View:</b> {view_url}\n"
                 f"🔗 <b>Direct link:</b> {raw_url}\n"
                 f"🗑️ <b>Delete link:</b> {delete_url}\n"

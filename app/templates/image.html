@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Image Preview - PictureMania{% endblock %}
+{% block title %}Asset Preview - The Vault{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl w-full flex flex-col gap-5 relative z-10 px-2 sm:px-0">
@@ -27,7 +27,7 @@
                 </div>
             </div>
 
-            <!-- Image Viewport -->
+            <!-- Asset Viewport -->
             <div class="image-container w-full bg-[#07080c] border border-white/5 rounded-xl overflow-hidden flex justify-center items-center p-1.5 min-h-[180px] max-h-[500px] relative">
                 {% if image.is_nsfw %}
                     <div id="nsfw-overlay" class="absolute inset-0 bg-[#07080c]/98 backdrop-blur-2xl flex flex-col justify-center items-center text-center p-4 z-20">
@@ -35,16 +35,42 @@
                             <i class="fa-solid fa-triangle-exclamation text-base"></i>
                         </div>
                         <h3 class="font-outfit text-sm font-bold text-white mb-1">Sensitive Content Warning</h3>
-                        <p class="text-[10px] text-[#94A3B8] max-w-xs mb-4">This image is flagged for sensitive content review.</p>
+                        <p class="text-[10px] text-[#94A3B8] max-w-xs mb-4">This asset is flagged for sensitive content review.</p>
                         <button onclick="revealImage()" class="btn-cta text-white px-4 py-2 text-xs font-bold transition-all">
-                            Reveal Image
+                            Reveal Asset
                         </button>
                     </div>
                 {% endif %}
-                <img src="/raw/{{ image.slug }}" alt="Hosted image" class="max-w-full max-h-[480px] rounded-lg object-contain shadow-lg">
+
+                {% if image.mime_type and image.mime_type.startswith("video/") %}
+                    <video src="/raw/{{ image.slug }}" controls class="max-w-full max-h-[480px] rounded-lg object-contain shadow-lg"></video>
+                {% elif image.mime_type and image.mime_type.startswith("image/") %}
+                    <img src="/raw/{{ image.slug }}" alt="Hosted asset" class="max-w-full max-h-[480px] rounded-lg object-contain shadow-lg">
+                {% else %}
+                    <div class="flex flex-col items-center justify-center p-12 gap-4 text-center">
+                        <div class="w-20 h-20 rounded-2xl bg-[#0e1222]/80 border border-[#1d2745] flex items-center justify-center text-4xl shadow-xl">
+                            {% if image.mime_type and (image.mime_type == "application/pdf" or "document" in image.mime_type or "word" in image.mime_type or "excel" in image.mime_type or "powerpoint" in image.mime_type or image.mime_type.startswith("text/")) %}
+                                <i class="fa-solid fa-file-pdf text-emerald-400"></i>
+                            {% else %}
+                                <i class="fa-solid fa-file text-[#64748B]"></i>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <p class="font-outfit text-sm font-bold text-white mb-0.5">Secure Document/File</p>
+                            <p class="text-[10px] text-[#64748B] font-mono">Format: {{ image.mime_type or 'Unknown' }}</p>
+                        </div>
+                    </div>
+                {% endif %}
             </div>
 
             <!-- Links Share Area -->
+            {% set embed_val = '<img src="' ~ domain ~ '/raw/' ~ image.slug ~ '" alt="The Vault Asset">' %}
+            {% if image.mime_type and image.mime_type.startswith("video/") %}
+                {% set embed_val = '<video src="' ~ domain ~ '/raw/' ~ image.slug ~ '" controls style="max-width:100%"></video>' %}
+            {% elif image.mime_type and not image.mime_type.startswith("image/") %}
+                {% set embed_val = '<a href="' ~ domain ~ '/raw/' ~ image.slug ~ '" target="_blank">Download Asset</a>' %}
+            {% endif %}
+
             <div class="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 mt-1">
                 <div class="flex flex-col gap-1">
                     <label class="text-[9px] font-bold text-[#64748B] uppercase tracking-wider">Direct URL</label>
@@ -59,7 +85,7 @@
                 <div class="flex flex-col gap-1">
                     <label class="text-[9px] font-bold text-[#64748B] uppercase tracking-wider">HTML Embed</label>
                     <div class="flex gap-2">
-                        <input type="text" id="embed-code" value='<img src="{{ domain }}/raw/{{ image.slug }}" alt="PictureMania Image">' readonly 
+                        <input type="text" id="embed-code" value='{{ embed_val }}' readonly 
                                class="input-glass flex-grow px-2.5 py-1.5 text-xs font-mono text-[#CBD5E1] border border-white/5 focus:outline-none min-w-0">
                         <button onclick="copyLink('embed-code')" class="btn-glass text-blue-400 px-3 py-1.5 text-xs font-bold shrink-0">
                             Copy
@@ -73,7 +99,7 @@
                 <a href="/raw/{{ image.slug }}" target="_blank" class="btn-glass text-white px-4 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 w-full sm:w-auto">
                     <i class="fa-solid fa-up-right-from-square text-[10px]"></i>Open Raw
                 </a>
-                <a href="/raw/{{ image.slug }}" download="picturemania_{{ image.slug }}" class="btn-cta text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-1.5 w-full sm:w-auto">
+                <a href="/raw/{{ image.slug }}" download="vault_{{ image.slug }}" class="btn-cta text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-1.5 w-full sm:w-auto">
                     <i class="fa-solid fa-circle-down text-[10px]"></i>Download
                 </a>
             </div>
