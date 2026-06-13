@@ -4,11 +4,6 @@
 
 {% block content %}
 <div class="max-w-md w-full relative z-10 px-4 py-8 sm:px-0 flex flex-col items-center">
-    <!-- Icon/Shield Banner -->
-    <div class="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-2xl shadow-lg shadow-blue-500/5 mb-6">
-        <i class="fa-solid fa-user-lock animate-pulse"></i>
-    </div>
-
     <!-- Title and Description -->
     <h1 class="font-outfit text-xl font-bold tracking-tight text-white glow-text text-center">Secure Vault</h1>
     <p class="text-xs text-[#64748B] mt-1.5 text-center px-4">
@@ -40,15 +35,6 @@
                 <input type="hidden" name="password" id="real-password">
             </div>
         </form>
-    </div>
-    
-    <div class="mt-6 flex flex-col items-center gap-2">
-        <p class="text-[10px] text-[#475569] text-center">
-            Forgot PIN? Reset or toggle it off from your bot command.
-        </p>
-        <button onclick="handleLogout()" class="text-[10px] font-semibold text-[#64748B] hover:text-rose-400 transition-colors flex items-center gap-1.5 mt-2">
-            <i class="fa-solid fa-right-from-bracket"></i> Logout account
-        </button>
     </div>
 </div>
 {% endblock %}
