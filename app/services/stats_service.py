@@ -52,12 +52,17 @@ class StatsService:
         )
         most_viewed = list(most_viewed_res.scalars().all())
 
+        # Total users (distinct uploaders)
+        users_res = await db.execute(select(func.count(func.distinct(Image.uploaded_by))))
+        total_users = users_res.scalar() or 0
+
         return {
             "total_uploads": total_uploads,
             "total_views": total_views,
             "total_storage_mb": total_storage_mb,
             "daily_uploads": daily_uploads,
-            "most_viewed": most_viewed
+            "most_viewed": most_viewed,
+            "total_users": total_users
         }
 
 stats_service = StatsService()

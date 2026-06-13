@@ -16,10 +16,16 @@ from app.config import STORAGE_CHANNEL_ID, SECRET_KEY
 
 logger = logging.getLogger(__name__)
 
-# Auto-initialize database tables on startup
+# Auto-initialize database tables on startup and dynamically upgrade schema if needed
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute("ALTER TABLE images ADD COLUMN filename VARCHAR(255)")
+            logger.info("Database schema updated: Added 'filename' column to 'images' table.")
+        except Exception:
+            # Column already exists, or database doesn't support the ALTER statement
+            pass
 
 bot_task = None
 

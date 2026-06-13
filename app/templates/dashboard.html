@@ -200,7 +200,7 @@
     justify-content: flex-end;
 }
 #lb-slug {
-    font-family: 'Inter', monospace;
+    font-family: 'Inter', sans-serif;
     font-size: 10px;
     font-weight: 700;
     color: #fff;
@@ -544,17 +544,17 @@
 
     {% if total_items > 0 %}
         <!-- Horizontal Tab Navigation Bar -->
-        <div class="flex items-center gap-2 overflow-x-auto px-4 py-3.5 sticky top-[68px] z-40 bg-[#05060b]/90 backdrop-filter backdrop-blur-md border-b border-white/5 scrollbar-none" style="-webkit-overflow-scrolling: touch;">
+        <div class="flex items-center gap-2 overflow-x-auto px-4 py-3.5 sticky top-[61px] sm:top-[68px] z-40 bg-[#05060b]/90 backdrop-filter backdrop-blur-md border-b border-white/5 scrollbar-none" style="-webkit-overflow-scrolling: touch;">
             <button onclick="switchTab('images')" id="tab-images" class="tab-btn active px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 text-blue-400">
                 <i class="fa-regular fa-image"></i> Images <span class="text-[10px] opacity-70">({{ images_list|length }})</span>
             </button>
-            <button onclick="switchTab('videos')" id="tab-videos" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/2 border border-white/5 text-[#94A3B8] hover:text-white">
+            <button onclick="switchTab('videos')" id="tab-videos" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/5 border border-white/5 text-[#94A3B8] hover:text-white">
                 <i class="fa-regular fa-circle-play"></i> Videos <span class="text-[10px] opacity-70">({{ videos_list|length }})</span>
             </button>
-            <button onclick="switchTab('documents')" id="tab-documents" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/2 border border-white/5 text-[#94A3B8] hover:text-white">
+            <button onclick="switchTab('documents')" id="tab-documents" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/5 border border-white/5 text-[#94A3B8] hover:text-white">
                 <i class="fa-regular fa-file-pdf"></i> Documents <span class="text-[10px] opacity-70">({{ documents_list|length }})</span>
             </button>
-            <button onclick="switchTab('files')" id="tab-files" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/2 border border-white/5 text-[#94A3B8] hover:text-white">
+            <button onclick="switchTab('files')" id="tab-files" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/5 border border-white/5 text-[#94A3B8] hover:text-white">
                 <i class="fa-regular fa-file"></i> Files <span class="text-[10px] opacity-70">({{ files_list|length }})</span>
             </button>
         </div>
@@ -572,6 +572,7 @@
                              data-thumb="/thumb/{{ img.slug }}"
                              data-size="{{ img.file_size }}"
                              data-mime="{{ img.mime_type or '' }}"
+                             data-filename="{% if img.filename %}{{ img.filename }}{% else %}{{ img.slug }}{% endif %}"
                              onclick="openLightboxFromEl(this)">
                             <img src="/thumb/{{ img.slug }}" alt="{{ img.slug }}" class="w-full h-full object-cover" loading="lazy">
                         </div>
@@ -594,6 +595,7 @@
                              data-thumb="/thumb/{{ img.slug }}"
                              data-size="{{ img.file_size }}"
                              data-mime="{{ img.mime_type or '' }}"
+                             data-filename="{% if img.filename %}{{ img.filename }}{% else %}{{ img.slug }}{% endif %}"
                              onclick="openLightboxFromEl(this)">
                             <img src="/thumb/{{ img.slug }}" alt="{{ img.slug }}" class="w-full h-full object-cover" loading="lazy">
                             <div class="absolute bottom-2 right-2 bg-black/70 px-2 py-0.5 rounded-lg text-[9px] font-semibold text-white flex items-center gap-1">
@@ -619,13 +621,14 @@
                              data-thumb="/thumb/{{ img.slug }}"
                              data-size="{{ img.file_size }}"
                              data-mime="{{ img.mime_type or '' }}"
+                             data-filename="{% if img.filename %}{{ img.filename }}{% else %}{{ img.slug }}{% endif %}"
                              onclick="openLightboxFromEl(this)">
                             <div class="flex items-center gap-3.5 min-w-0">
                                 <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
                                     <i class="fa-regular fa-file-pdf text-lg"></i>
                                 </div>
                                 <div class="min-w-0 flex flex-col">
-                                    <span class="text-sm font-bold text-white truncate font-mono tracking-wide">{{ img.slug }}</span>
+                                    <span class="text-sm font-bold text-white truncate font-mono tracking-wide">{% if img.filename %}{{ img.filename }}{% else %}{{ img.slug }}{% endif %}</span>
                                     <span class="text-[10px] text-[#475569] font-medium uppercase mt-0.5">
                                         {% if img.file_size >= 1048576 %}
                                             {{ (img.file_size / 1048576)|round(2) }} MB
@@ -660,13 +663,14 @@
                              data-thumb="/thumb/{{ img.slug }}"
                              data-size="{{ img.file_size }}"
                              data-mime="{{ img.mime_type or '' }}"
+                             data-filename="{% if img.filename %}{{ img.filename }}{% else %}{{ img.slug }}{% endif %}"
                              onclick="openLightboxFromEl(this)">
                             <div class="flex items-center gap-3.5 min-w-0">
                                 <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-[#94A3B8] shrink-0">
                                     <i class="fa-regular fa-file text-lg"></i>
                                 </div>
                                 <div class="min-w-0 flex flex-col">
-                                    <span class="text-sm font-bold text-white truncate font-mono tracking-wide">{{ img.slug }}</span>
+                                    <span class="text-sm font-bold text-white truncate font-mono tracking-wide">{% if img.filename %}{{ img.filename }}{% else %}{{ img.slug }}{% endif %}</span>
                                     <span class="text-[10px] text-[#475569] font-medium uppercase mt-0.5">
                                         {% if img.file_size >= 1048576 %}
                                             {{ (img.file_size / 1048576)|round(2) }} MB
@@ -784,9 +788,34 @@
                     <span class="tele-card-label">Telegram ID</span>
                     <span class="tele-card-value accent small">{{ user_id }}</span>
                 </div>
-                <div class="tele-card full">
-                    <span class="tele-card-label">Auth Method</span>
-                    <span class="tele-card-value small">Telegram WebApp Secure Token</span>
+            </div>
+        </div>
+
+        <!-- System Telemetry -->
+        <div class="tele-section">
+            <div class="tele-section-title">System Telemetry</div>
+            <div class="tele-grid">
+                <div class="tele-card">
+                    <span class="tele-card-label">Total Hosted Files</span>
+                    <span class="tele-card-value accent">{{ system_stats.total_uploads }}</span>
+                </div>
+                <div class="tele-card">
+                    <span class="tele-card-label">Disk Used</span>
+                    <span class="tele-card-value">
+                        {% if system_stats.total_storage_mb >= 1024 %}
+                            {{ (system_stats.total_storage_mb / 1024)|round(2) }} GB
+                        {% else %}
+                            {{ system_stats.total_storage_mb }} MB
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="tele-card">
+                    <span class="tele-card-label">Total Users</span>
+                    <span class="tele-card-value">{{ system_stats.total_users }}</span>
+                </div>
+                <div class="tele-card">
+                    <span class="tele-card-label">Uploaded Today</span>
+                    <span class="tele-card-value green">{{ system_stats.daily_uploads }}</span>
                 </div>
             </div>
         </div>
@@ -799,18 +828,33 @@
                 <div class="tele-card full">
                     <span class="tele-card-label">Status</span>
                     <span class="tele-card-value green small">🔒 Password Lock Active</span>
-                    <form action="/api/user/lock/disable" method="POST" style="margin-top: 10px;" onsubmit="return confirm('Are you sure you want to disable the password lock?');">
+                    <p class="text-[11px] text-white/90 mt-2 font-medium">Your current passcode is: <strong class="text-[#60A5FA] font-mono tracking-wider">{{ passcode }}</strong></p>
+                    <form action="/api/user/lock/disable" method="POST" style="margin-top: 12px;" onsubmit="return confirm('Are you sure you want to disable the password lock?');">
                         <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/10 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all w-full text-center">
                             Toggle Off Password
                         </button>
                     </form>
                 </div>
                 {% else %}
-                <div class="tele-card full">
+                <div class="tele-card full flex flex-col gap-2">
                     <span class="tele-card-label">Status</span>
                     <span class="tele-card-value small text-[#64748B]">🔓 Lock Inactive</span>
-                    <p style="font-size: 10px; color: #475569; margin-top: 6px; line-height: 1.4;">
-                        To secure your vault, send <code>/lock &lt;password&gt;</code> to the Telegram bot (e.g. <code>/lock 1456</code>).
+                    
+                    {% if last_passcode %}
+                    <p class="text-[10px] text-slate-400 mt-1">Last used passcode: <strong class="text-slate-300 font-mono">{{ last_passcode }}</strong></p>
+                    {% endif %}
+                    
+                    <form action="/api/user/lock/enable" method="POST" class="mt-2.5 flex flex-col gap-2">
+                        <div class="flex gap-2">
+                            <input type="text" name="password" required pattern="[0-9]{4}" maxlength="4" placeholder="4-digit PIN"
+                                   class="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 font-mono tracking-widest focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 flex-grow text-center">
+                            <button type="submit" class="bg-blue-500/20 hover:bg-blue-500/35 text-[#60A5FA] border border-blue-500/20 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0">
+                                Set PIN
+                            </button>
+                        </div>
+                    </form>
+                    <p style="font-size: 9px; color: #475569; margin-top: 4px; line-height: 1.4;">
+                        Enter a 4-digit numeric passcode above to lock your dashboard, or send <code>/lock &lt;password&gt;</code> to the Telegram bot.
                     </p>
                 </div>
                 {% endif %}
@@ -822,12 +866,8 @@
             <div class="tele-section-title">Vault Statistics</div>
             <div class="tele-grid">
                 <div class="tele-card">
-                    <span class="tele-card-label">Total Assets</span>
+                    <span class="tele-card-label">Total Files</span>
                     <span class="tele-card-value">{{ images|length }}</span>
-                </div>
-                <div class="tele-card">
-                    <span class="tele-card-label">Lifetime Uploads</span>
-                    <span class="tele-card-value">{{ user_stats.lifetime_uploads }}</span>
                 </div>
                 <div class="tele-card full">
                     <span class="tele-card-label">Total Storage Used</span>
@@ -947,7 +987,7 @@
         
         // Reset tabs style
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.className = 'tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/2 border border-white/5 text-[#94A3B8] hover:text-white';
+            btn.className = 'tab-btn px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 bg-white/5 border border-white/5 text-[#94A3B8] hover:text-white';
         });
         
         // Style selected tab
@@ -1017,12 +1057,13 @@
     let lbCurrentRaw  = '';
 
     function openLightboxFromEl(el) {
-        openLightbox(el.dataset.slug, el.dataset.raw, el.dataset.thumb, parseInt(el.dataset.size, 10), el.dataset.mime || '');
+        openLightbox(el.dataset.slug, el.dataset.raw, el.dataset.thumb, parseInt(el.dataset.size, 10), el.dataset.mime || '', el.dataset.filename || '');
     }
 
-    function openLightbox(slug, rawUrl, thumbUrl, fileSize, mimeType) {
+    function openLightbox(slug, rawUrl, thumbUrl, fileSize, mimeType, filename) {
         lbCurrentSlug = slug;
         lbCurrentRaw  = rawUrl;
+        const displayName = filename || slug;
 
         // Hide all views by default
         const imgEl = document.getElementById('lb-full-img');
@@ -1051,11 +1092,11 @@
             } else {
                 iconEl.innerHTML = '<i class="fa-solid fa-file text-[#64748B]"></i>';
             }
-            document.getElementById('lb-doc-name').textContent = slug;
+            document.getElementById('lb-doc-name').textContent = displayName;
             docEl.classList.remove('hidden');
         }
 
-        document.getElementById('lb-slug').textContent = slug;
+        document.getElementById('lb-slug').textContent = displayName;
         document.getElementById('lb-size').textContent =
             fileSize >= 1048576 ? (fileSize/1048576).toFixed(2) + ' MB' :
             fileSize >= 1024    ? Math.round(fileSize/1024) + ' KB' :
@@ -1104,7 +1145,8 @@
             nextCell.dataset.raw,
             nextCell.dataset.thumb,
             parseInt(nextCell.dataset.size, 10),
-            nextCell.dataset.mime || ''
+            nextCell.dataset.mime || '',
+            nextCell.dataset.filename || ''
         );
     }
 
@@ -1126,6 +1168,20 @@
             touchendY = e.changedTouches[0].screenY;
             handleSwipe();
         }, { passive: true });
+    }
+
+    function handleSwipe() {
+        const diffX = touchendX - touchstartX;
+        const diffY = touchendY - touchstartY;
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+            if (diffX > 50) {
+                // Swipe right -> Previous
+                navigateLightbox(-1);
+            } else if (diffX < -50) {
+                // Swipe left -> Next
+                navigateLightbox(1);
+            }
+        }
     }
 
     // Keyboard support
@@ -1183,15 +1239,6 @@
         document.getElementById('lb-embed-code').textContent = embed;
         wrap.classList.add('open');
     }
-
-    function lbCopyEmbed() {
-        copyText(document.getElementById('lb-embed-code').textContent, 'Embed code copied!');
-    }
-
-    window.addEventListener('popstate', () => {
-        if (document.getElementById('lightbox').classList.contains('open')) closeLightbox();
-        if (document.getElementById('tele-panel').classList.contains('open')) closeTelePanel();
-    });
 
     // ============================================================
     // TELEMETRY PANEL

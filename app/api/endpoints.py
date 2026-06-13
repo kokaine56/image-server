@@ -260,11 +260,25 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
         
         for img in images:
             mime = (img.mime_type or "").lower()
+            fname = (img.filename or "").lower()
+            
+            # Check extension from filename first if available
+            ext = fname.split(".")[-1] if "." in fname else ""
+            
+            is_doc = (
+                ext in ["txt", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "rtf", "odt", "ods", "odp"] or
+                mime.startswith("text/") or
+                mime == "application/pdf" or
+                "document" in mime or "word" in mime or "excel" in mime or "sheet" in mime or "powerpoint" in mime or "presentation" in mime or
+                mime in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                         "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+            )
+            
             if mime.startswith("image/"):
                 images_list.append(img)
             elif mime.startswith("video/"):
                 videos_list.append(img)
-            elif mime == "application/pdf" or "document" in mime or "word" in mime or "excel" in mime or "powerpoint" in mime or mime.startswith("text/") or mime in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
+            elif is_doc:
                 documents_list.append(img)
             else:
                 files_list.append(img)
@@ -278,6 +292,8 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
             "countdown_seconds": countdown_seconds
         }
         
+        system_stats = await stats_service.get_stats(db)
+
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
@@ -288,11 +304,14 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
                 "files_list": files_list,
                 "images": images,
                 "user_stats": user_stats,
+                "system_stats": system_stats,
                 "username": request.session.get("username", "User"),
                 "avatar_url": f"/avatar/{user_id}",
                 "user_id": user_id,
                 "token": SECRET_KEY,
-                "user_has_lock": user_lock is not None
+                "user_has_lock": user_lock is not None,
+                "passcode": user_lock.password if user_lock else None,
+                "last_passcode": request.session.get("last_passcode")
             }
         )
     return templates.TemplateResponse(request=request, name="index.html")
@@ -832,6 +851,7 @@ async def api_unlock_gallery(
     
     if not user_lock or user_lock.password == password:
         request.session["gallery_unlocked"] = True
+        request.session["last_passcode"] = password
         return RedirectResponse(url="/?unlocked=true", status_code=303)
         
     return templates.TemplateResponse(
@@ -851,6 +871,34 @@ async def api_lock_session(request: Request):
     request.session.pop("gallery_unlocked", None)
     return {"success": True}
 
+@router.post("/api/user/lock/enable")
+async def api_enable_user_lock(
+    request: Request,
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    if not password.isdigit() or len(password) != 4:
+        raise HTTPException(status_code=400, detail="Password must be a 4-digit number")
+        
+    lock_stmt = select(UserLock).where(UserLock.telegram_id == user_id)
+    lock_res = await db.execute(lock_stmt)
+    user_lock = lock_res.scalar()
+    
+    if user_lock:
+        user_lock.password = password
+    else:
+        user_lock = UserLock(telegram_id=user_id, password=password)
+        db.add(user_lock)
+        
+    await db.commit()
+    request.session["gallery_unlocked"] = True
+    request.session["last_passcode"] = password
+    return RedirectResponse(url="/", status_code=303)
+
 @router.post("/api/user/lock/disable")
 async def api_disable_user_lock(
     request: Request,
@@ -859,6 +907,12 @@ async def api_disable_user_lock(
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    lock_stmt = select(UserLock).where(UserLock.telegram_id == user_id)
+    lock_res = await db.execute(lock_stmt)
+    user_lock = lock_res.scalar()
+    if user_lock:
+        request.session["last_passcode"] = user_lock.password
         
     await db.execute(delete(UserLock).where(UserLock.telegram_id == user_id))
     await db.commit()
@@ -1029,7 +1083,8 @@ async def api_upload_image(
         uploaded_by=session_user_id, # Link it to their Telegram account
         delete_token=delete_token,
         is_nsfw=is_nsfw,
-        nsfw_checked=True
+        nsfw_checked=True,
+        filename=file.filename
     )
     db.add(new_image)
     await db.commit()

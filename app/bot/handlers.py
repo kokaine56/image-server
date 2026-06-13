@@ -281,7 +281,8 @@ async def process_media_group(media_group_id: str):
                     uploaded_by=user_id,
                     delete_token=delete_token,
                     is_nsfw=is_nsfw,
-                    nsfw_checked=True
+                    nsfw_checked=True,
+                    filename=file_name
                 )
                 db.add(new_image)
                 await db.commit()
@@ -772,7 +773,8 @@ async def media_upload_handler(message: Message):
                 uploaded_by=user_id,
                 delete_token=delete_token,
                 is_nsfw=is_nsfw,
-                nsfw_checked=True
+                nsfw_checked=True,
+                filename=file_name
             )
             db.add(new_image)
             await db.commit()

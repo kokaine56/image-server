@@ -19,6 +19,7 @@ class Image(Base):
     delete_token = Column(String(100), unique=True, nullable=False)
     is_nsfw = Column(Boolean, default=False, nullable=False)
     nsfw_checked = Column(Boolean, default=False, nullable=False)
+    filename = Column(String(255), nullable=True)
 
     analytics = relationship("Analytics", back_populates="image", cascade="all, delete-orphan")
 
