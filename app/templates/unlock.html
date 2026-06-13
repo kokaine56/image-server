@@ -11,13 +11,13 @@
 
     <!-- Title and Description -->
     <h1 class="font-outfit text-xl font-bold tracking-tight text-white glow-text text-center">Gallery Locked</h1>
-    <p class="text-xs text-[#64748B] mt-1.5 text-center">
-        Enter the password configured via the Telegram Bot to view your hosted items.
+    <p class="text-xs text-[#64748B] mt-1.5 text-center px-4">
+        Enter the password configured via the Telegram Bot to unlock your gallery.
     </p>
 
     <!-- Form Container -->
     <div class="border-gradient-wrapper w-full mt-6">
-        <form action="/api/user/lock/unlock" method="POST" class="border-gradient-card p-5 flex flex-col gap-4">
+        <form id="otp-form" action="/api/user/lock/unlock" method="POST" class="border-gradient-card p-5 flex flex-col gap-4">
             {% if error %}
             <div class="bg-rose-500/10 border border-rose-500/20 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-rose-400 flex items-center gap-2">
                 <i class="fa-solid fa-circle-exclamation shrink-0"></i>
@@ -25,18 +25,22 @@
             </div>
             {% endif %}
 
-            <div class="flex flex-col gap-1.5">
-                <label for="password" class="text-[9px] font-bold text-[#64748B] uppercase tracking-wider">Access PIN / Password</label>
-                <div class="relative">
-                    <input type="password" name="password" id="password" required autofocus placeholder="••••"
-                           class="input-glass w-full pl-3.5 pr-10 py-2 text-xs text-[#CBD5E1] placeholder-[#475569] focus:outline-none min-h-[38px] text-center tracking-widest font-bold">
-                    <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#94A3B8] transition-colors">
-                        <i id="eye-icon" class="fa-solid fa-eye-slash text-xs"></i>
-                    </button>
+            <div class="flex flex-col items-center gap-3.5">
+                <label class="text-[9px] font-bold text-[#64748B] uppercase tracking-wider">Enter Password / PIN</label>
+                
+                <div class="flex justify-center gap-2" id="otp-inputs-container">
+                    {% for i in range(password_length) %}
+                    <input type="text" maxlength="1" 
+                           class="otp-digit w-9 h-11 text-center text-base font-bold text-white bg-black/40 border border-white/10 rounded-xl focus:border-blue-500/50 focus:bg-blue-500/5 focus:outline-none transition-all select-none"
+                           data-index="{{ i }}" autocomplete="off">
+                    {% endfor %}
                 </div>
+                
+                <!-- Hidden real password field -->
+                <input type="hidden" name="password" id="real-password">
             </div>
 
-            <button type="submit" class="w-full btn-cta text-white px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20">
+            <button type="submit" class="w-full btn-cta text-white px-4 py-2 rounded-xl text-xs font-bold transition-all min-h-[38px] flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 mt-2">
                 <i class="fa-solid fa-unlock-keyhole text-[10px]"></i>Unlock Gallery
             </button>
         </form>
@@ -44,7 +48,7 @@
     
     <div class="mt-6 flex flex-col items-center gap-2">
         <p class="text-[10px] text-[#475569] text-center">
-            Forgot PIN? You can reset or toggle it off from the bot command or support.
+            Forgot PIN? Reset or toggle it off from your bot command.
         </p>
         <button onclick="handleLogout()" class="text-[10px] font-semibold text-[#64748B] hover:text-rose-400 transition-colors flex items-center gap-1.5 mt-2">
             <i class="fa-solid fa-right-from-bracket"></i> Logout account
@@ -55,16 +59,69 @@
 
 {% block scripts %}
 <script>
-function togglePasswordVisibility() {
-    const pwdInput = document.getElementById("password");
-    const eyeIcon = document.getElementById("eye-icon");
-    if (pwdInput.type === "password") {
-        pwdInput.type = "text";
-        eyeIcon.className = "fa-solid fa-eye text-xs";
-    } else {
-        pwdInput.type = "password";
-        eyeIcon.className = "fa-solid fa-eye-slash text-xs";
+document.addEventListener("DOMContentLoaded", () => {
+    const inputs = document.querySelectorAll(".otp-digit");
+    const realPasswordInput = document.getElementById("real-password");
+    const form = document.getElementById("otp-form");
+
+    // Auto focus first field
+    if (inputs.length > 0) {
+        inputs[0].focus();
     }
-}
+
+    inputs.forEach((input, index) => {
+        input.addEventListener("input", (e) => {
+            const val = e.target.value;
+            if (val.length > 0) {
+                // Focus next
+                if (index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                } else {
+                    // Final field: auto submit
+                    submitForm();
+                }
+            }
+        });
+
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Backspace") {
+                if (input.value === "" && index > 0) {
+                    inputs[index - 1].focus();
+                    inputs[index - 1].value = "";
+                }
+            }
+        });
+
+        input.addEventListener("paste", (e) => {
+            e.preventDefault();
+            const pastedData = (e.clipboardData || window.clipboardData).getData("text").trim();
+            const chars = pastedData.split("").slice(0, inputs.length);
+            
+            chars.forEach((char, i) => {
+                inputs[i].value = char;
+            });
+
+            if (chars.length > 0) {
+                const nextFocusIndex = Math.min(chars.length, inputs.length - 1);
+                inputs[nextFocusIndex].focus();
+                
+                if (chars.length === inputs.length) {
+                    submitForm();
+                }
+            }
+        });
+    });
+
+    form.addEventListener("submit", (e) => {
+        const fullPassword = Array.from(inputs).map(inp => inp.value).join("");
+        realPasswordInput.value = fullPassword;
+    });
+
+    function submitForm() {
+        const fullPassword = Array.from(inputs).map(inp => inp.value).join("");
+        realPasswordInput.value = fullPassword;
+        form.submit();
+    }
+});
 </script>
 {% endblock %}

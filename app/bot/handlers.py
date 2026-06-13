@@ -4,9 +4,9 @@ import datetime
 import secrets
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, BufferedInputFile, ChatJoinRequest, ChatMemberUpdated, MenuButtonWebApp, WebAppInfo
+from aiogram.types import Message, BufferedInputFile, ChatJoinRequest, ChatMemberUpdated, MenuButtonWebApp, WebAppInfo, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from aiogram.exceptions import TelegramBadRequest
 
 from app.config import STORAGE_CHANNEL_ID, DOMAIN, USER_LIMIT, ADMIN_USER_IDS, SECRET_KEY
@@ -25,6 +25,14 @@ router = Router()
 # Global media group collection cache: media_group_id -> list of Messages
 media_group_cache = {}
 
+def get_moderation_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🚫 Ban User", callback_data=f"ban:{user_id}"),
+            InlineKeyboardButton(text="✅ Unban User", callback_data=f"unban:{user_id}")
+        ]
+    ])
+
 async def generate_unique_slug(db) -> str:
     while True:
         # Generate 6 character alphanumeric slug
@@ -41,7 +49,7 @@ async def is_user_banned(db, user_id: int) -> bool:
 
 async def check_user_limit(db, user_id: int) -> bool:
     IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-    now_ist = datetime.datetime.now(IST)
+    now_ist = datetime.timezone.now(IST)
     today_midnight_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
     today_midnight_utc_naive = today_midnight_ist.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     
@@ -159,9 +167,10 @@ async def process_media_group(media_group_id: str):
                 results.append((file_name, "Missing file payload.", False))
                 continue
                 
-            # Enforce 10MB size limit
-            if file_size > 10 * 1024 * 1024:
-                results.append((file_name, "Exceeds 10MB size limit.", False))
+            # Enforce 10MB size limit (20MB for admins - maximum download size for Telegram Bot API files)
+            max_size = 20 * 1024 * 1024 if is_admin else 10 * 1024 * 1024
+            if file_size > max_size:
+                results.append((file_name, f"Exceeds limit ({max_size // (1024*1024)}MB).", False))
                 continue
 
             # Duplicate Upload Check
@@ -195,17 +204,25 @@ async def process_media_group(media_group_id: str):
                 is_nsfw = moderation_service.check_nsfw(optimized_bytes)
                 
                 stored_file_id = file_id
+                uploader_name = first_msg.from_user.username or first_msg.from_user.first_name
+                caption_text = f"👤 Uploaded by: {uploader_name} (ID: {user_id})"
+                mod_markup = get_moderation_keyboard(user_id)
+                
                 try:
                     channel_msg = await bot.copy_message(
                         chat_id=STORAGE_CHANNEL_ID,
                         from_chat_id=chat_id,
-                        message_id=msg.message_id
+                        message_id=msg.message_id,
+                        caption=caption_text,
+                        reply_markup=mod_markup
                     )
                 except Exception as e:
                     input_file = BufferedInputFile(optimized_bytes, filename=file_name)
                     channel_msg = await bot.send_document(
                         chat_id=STORAGE_CHANNEL_ID,
-                        document=input_file
+                        document=input_file,
+                        caption=caption_text,
+                        reply_markup=mod_markup
                     )
                     if channel_msg.document:
                         stored_file_id = channel_msg.document.file_id
@@ -585,9 +602,10 @@ async def media_upload_handler(message: Message):
             await message.reply("❌ Failed to process upload attachment.")
             return
 
-        # Enforce 10MB size limit
-        if file_size > 10 * 1024 * 1024:
-            await message.reply("❌ File size exceeds the 10MB limit.")
+        # Enforce size limit (20MB for admins, 10MB for others)
+        max_size = 20 * 1024 * 1024 if is_admin else 10 * 1024 * 1024
+        if file_size > max_size:
+            await message.reply(f"❌ File size exceeds the limit of {max_size // (1024 * 1024)}MB.")
             return
 
         # Check if the image already exists in the database
@@ -640,11 +658,17 @@ async def media_upload_handler(message: Message):
 
             # Copy message or fallback
             stored_file_id = file_id
+            uploader_name = message.from_user.username or message.from_user.first_name
+            caption_text = f"👤 Uploaded by: {uploader_name} (ID: {user_id})"
+            mod_markup = get_moderation_keyboard(user_id)
+
             try:
                 channel_msg = await bot.copy_message(
                     chat_id=STORAGE_CHANNEL_ID,
                     from_chat_id=message.chat.id,
-                    message_id=message.message_id
+                    message_id=message.message_id,
+                    caption=caption_text,
+                    reply_markup=mod_markup
                 )
             except Exception as copy_err:
                 logger.warning(f"copy_message failed: {copy_err}. Falling back to uploading optimized bytes directly.")
@@ -652,7 +676,9 @@ async def media_upload_handler(message: Message):
                     input_file = BufferedInputFile(optimized_bytes, filename=file_name)
                     channel_msg = await bot.send_document(
                         chat_id=STORAGE_CHANNEL_ID,
-                        document=input_file
+                        document=input_file,
+                        caption=caption_text,
+                        reply_markup=mod_markup
                     )
                     if channel_msg.document:
                         stored_file_id = channel_msg.document.file_id
@@ -704,3 +730,49 @@ async def media_upload_handler(message: Message):
             logger.error(f"Error handling media upload: {e}", exc_info=True)
             error_message = f"❌ <b>System error processing your upload:</b>\n<code>{str(e)}</code>\n\nPlease check your bot configuration (e.g., bot permissions in the storage channel, database connection, etc.)."
             await status_msg.edit_text(error_message)
+
+@router.callback_query(F.data.startswith("ban:"))
+async def handle_callback_ban(callback: CallbackQuery):
+    # Check if the clicker is admin
+    if callback.from_user.id not in ADMIN_USER_IDS:
+        await callback.answer("❌ You are not authorized to perform this action.", show_alert=True)
+        return
+        
+    user_id = int(callback.data.split(":")[1])
+    async with async_session() as db:
+        # Check if already banned
+        stmt = select(BannedUser).where(BannedUser.telegram_id == user_id)
+        res = await db.execute(stmt)
+        if res.scalar():
+            await callback.answer("User is already banned.", show_alert=True)
+            return
+            
+        ban_entry = BannedUser(telegram_id=user_id, reason="Banned via channel moderation button")
+        db.add(ban_entry)
+        await db.commit()
+        
+    await callback.answer("🚫 User has been successfully banned.", show_alert=True)
+    try:
+        new_caption = f"{callback.message.caption}\n\n⚠️ STATUS: BANNED"
+        await callback.message.edit_caption(caption=new_caption, reply_markup=get_moderation_keyboard(user_id))
+    except Exception as e:
+        logger.error(f"Failed to edit caption: {e}")
+
+@router.callback_query(F.data.startswith("unban:"))
+async def handle_callback_unban(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_USER_IDS:
+        await callback.answer("❌ You are not authorized to perform this action.", show_alert=True)
+        return
+        
+    user_id = int(callback.data.split(":")[1])
+    async with async_session() as db:
+        await db.execute(delete(BannedUser).where(BannedUser.telegram_id == user_id))
+        await db.commit()
+        
+    await callback.answer("✅ User has been successfully unbanned.", show_alert=True)
+    try:
+        # Clean status line
+        caption_lines = callback.message.caption.split("\n\n⚠️ STATUS:")[0]
+        await callback.message.edit_caption(caption=caption_lines, reply_markup=get_moderation_keyboard(user_id))
+    except Exception as e:
+        logger.error(f"Failed to edit caption: {e}")

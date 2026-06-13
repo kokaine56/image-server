@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pydantic import BaseModel
 
 from app.config import DOMAIN, STORAGE_CHANNEL_ID, SECRET_KEY, GUEST_LIMIT, USER_LIMIT, BOT_USERNAME, BOT_TOKEN, ADMIN_USER_IDS, LOGO_URL
@@ -179,9 +180,19 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
         # Check if the user is banned
         stmt_ban = select(BannedUser).where(BannedUser.telegram_id == user_id)
         res_ban = await db.execute(stmt_ban)
-        if res_ban.scalar():
+        ban_record = res_ban.scalar()
+        if ban_record:
+            reason_str = f" Reason: {ban_record.reason}" if ban_record.reason else ""
             request.session.clear()
-            return templates.TemplateResponse(request=request, name="index.html")
+            return templates.TemplateResponse(
+                request=request,
+                name="error.html",
+                context={
+                    "error_code": "Banned",
+                    "message": f"❌ You have been banned from using this service.{reason_str}"
+                },
+                status_code=403
+            )
 
         # Determine if the user is an administrator
         is_admin = user_id in ADMIN_USER_IDS
@@ -198,9 +209,13 @@ async def homepage_view(request: Request, db: AsyncSession = Depends(get_db)):
                 context={
                     "username": request.session.get("username", "User"),
                     "avatar_url": f"/avatar/{user_id}",
-                    "token": SECRET_KEY
+                    "token": SECRET_KEY,
+                    "password_length": len(user_lock.password)
                 }
             )
+
+        # Clear unlock state from session immediately so the next reload/visit locks it again
+        request.session.pop("gallery_unlocked", None)
 
         # Query all images uploaded by this user
         stmt = select(Image).where(Image.uploaded_by == user_id).order_by(Image.created_at.desc())
@@ -394,6 +409,15 @@ async def admin_dashboard_view(
     banned_res = await db.execute(banned_stmt)
     banned_users = banned_res.scalars().all()
     banned_ids = {u.telegram_id for u in banned_users}
+
+    # Get all active uploaders to build a userlist
+    uploader_stmt = select(
+        Image.uploaded_by,
+        func.count(Image.id).label("total_uploads"),
+        func.sum(Image.file_size).label("total_size")
+    ).where(Image.uploaded_by != None).group_by(Image.uploaded_by)
+    uploader_res = await db.execute(uploader_stmt)
+    uploaders = uploader_res.all()
     
     return templates.TemplateResponse(
         request=request,
@@ -406,7 +430,8 @@ async def admin_dashboard_view(
             "api_key": api_key,
             "kick_all_enabled": kick_all_enabled,
             "banned_users": banned_users,
-            "banned_ids": banned_ids
+            "banned_ids": banned_ids,
+            "uploaders": uploaders
         }
     )
 
@@ -774,7 +799,8 @@ async def api_unlock_gallery(
         context={
             "username": request.session.get("username", "User"),
             "avatar_url": f"/avatar/{user_id}",
-            "error": "Incorrect password. Please try again."
+            "error": "Incorrect password. Please try again.",
+            "password_length": len(user_lock.password) if user_lock else 4
         },
         status_code=400
     )
@@ -859,10 +885,22 @@ async def api_upload_image(
     
     # 5. Upload to storage channel
     try:
+        uploader_name = request.session.get("username", "Web API")
+        user_id_str = str(session_user_id) if session_user_id else "Guest"
+        caption_text = f"👤 Uploaded by: {uploader_name} (ID: {user_id_str})"
+        mod_markup = None
+        if session_user_id:
+            mod_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🚫 Ban User", callback_data=f"ban:{session_user_id}"),
+                InlineKeyboardButton(text="✅ Unban User", callback_data=f"unban:{session_user_id}")
+            ]])
+            
         input_file = BufferedInputFile(optimized_bytes, filename=file.filename or "image.jpg")
         sent_msg = await bot.send_document(
             chat_id=STORAGE_CHANNEL_ID,
-            document=input_file
+            document=input_file,
+            caption=caption_text,
+            reply_markup=mod_markup
         )
         file_id = sent_msg.document.file_id if sent_msg.document else sent_msg.photo[-1].file_id
         file_unique_id = sent_msg.document.file_unique_id if sent_msg.document else sent_msg.photo[-1].file_unique_id
